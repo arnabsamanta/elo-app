@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elo League App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .screen { display: none; }
+        .active-screen { display: block; }
+        .nav-link { cursor: pointer; }
+    </style>
+</head>
+<body class="bg-light">
+
+<div class="container mt-5">
+    <div id="auth-screen" class="screen active-screen">
+        <div class="card p-4 mx-auto" style="max-width: 400px;">
+            <h3 class="text-center">Elo League</h3>
+            <div class="mb-3">
+                <input type="text" id="auth-username" class="form-control" placeholder="Username">
+            </div>
+            <div class="mb-3">
+                <input type="password" id="auth-password" class="form-control" placeholder="Password">
+            </div>
+            <button class="btn btn-primary w-100 mb-2" onclick="login()">Login</button>
+            <button class="btn btn-secondary w-100" onclick="signup()">Sign Up</button>
+            <p id="auth-msg" class="text-danger mt-2 text-center"></p>
+        </div>
+    </div>
+
+    <div id="dashboard-screen" class="screen">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Your Groups</h2>
+            <button class="btn btn-outline-danger" onclick="logout()">Logout</button>
+        </div>
+
+        <div class="input-group mb-3">
+            <input type="text" id="new-group-name" class="form-control" placeholder="New Group Name (e.g. Office Ping Pong)">
+            <button class="btn btn-success" onclick="createGroup()">Create Group</button>
+        </div>
+
+        <div id="groups-list" class="list-group">
+            </div>
+    </div>
+
+    <div id="group-screen" class="screen">
+        <button class="btn btn-secondary mb-3" onclick="showScreen('dashboard-screen')">&larr; Back to Groups</button>
+        <h2 id="group-title">Group Name</h2>
+
+        <ul class="nav nav-tabs mb-3" id="groupTabs">
+            <li class="nav-item"><a class="nav-link active" onclick="switchTab('matches')">Matches</a></li>
+            <li class="nav-item"><a class="nav-link" onclick="switchTab('leaderboard')">Leaderboard</a></li>
+            <li class="nav-item"><a class="nav-link" onclick="switchTab('members')">Members</a></li>
+        </ul>
+
+        <div id="tab-matches" class="tab-content active-tab">
+            <div id="admin-match-controls" class="card p-3 mb-3 bg-white" style="display:none;">
+                <h5>Add Match</h5>
+                <div class="row g-2">
+                    <div class="col-md-4"><select id="match-winner" class="form-select"></select></div>
+                    <div class="col-md-4"><select id="match-loser" class="form-select"></select></div>
+                    <div class="col-md-2"><input type="text" id="match-score" class="form-control" placeholder="Score"></div>
+                    <div class="col-md-2"><button class="btn btn-primary w-100" onclick="addMatch()">Add</button></div>
+                </div>
+            </div>
+            <div id="matches-list" class="list-group"></div>
+        </div>
+
+        <div id="tab-leaderboard" class="tab-content" style="display:none;">
+            <table class="table table-striped bg-white">
+                <thead><tr><th>Rank</th><th>Player</th><th>Elo</th></tr></thead>
+                <tbody id="leaderboard-body"></tbody>
+            </table>
+        </div>
+
+        <div id="tab-members" class="tab-content" style="display:none;">
+            <div id="admin-member-controls" class="input-group mb-3" style="display:none;">
+                <input type="text" id="new-member-username" class="form-control" placeholder="Username to add">
+                <button class="btn btn-primary" onclick="addMember()">Add Member</button>
+            </div>
+            <ul id="members-list" class="list-group"></ul>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentGroupId = null;
+    let groupMembersData = [];
+
+    // --- NAVIGATION ---
+    function showScreen(id) {
+        document.querySelectorAll('.screen').forEach(el => el.classList.remove('active-screen'));
+        document.getElementById(id).classList.add('active-screen');
+        if(id === 'dashboard-screen') loadGroups();
+    }
+
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+        document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+        document.getElementById('tab-' + tabName).style.display = 'block';
+        event.target.classList.add('active');
+    }
+
+    // --- AUTH ---
+    async function api(url, method='GET', data=null) {
+        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        if (data) opts.body = JSON.stringify(data);
+        const res = await fetch('/api' + url, opts);
+        return res;
+    }
+
+    async function login() {
+        const u = document.getElementById('auth-username').value;
+        const p = document.getElementById('auth-password').value;
+        const res = await api('/login', 'POST', { username: u, password: p });
+        if (res.ok) showScreen('dashboard-screen');
+        else document.getElementById('auth-msg').innerText = "Invalid credentials";
+    }
+
+    async function signup() {
+        const u = document.getElementById('auth-username').value;
+        const p = document.getElementById('auth-password').value;
+        const res = await api('/signup', 'POST', { username: u, password: p });
+        if (res.ok) alert("Signed up! Please login.");
+        else alert("Username likely taken.");
+    }
+
+    async function logout() {
+        await api('/logout');
+        showScreen('auth-screen');
+    }
+
+    // --- DASHBOARD ---
+    async function loadGroups() {
+        const res = await api('/groups');
+        const groups = await res.json();
+        const list = document.getElementById('groups-list');
+        list.innerHTML = '';
+        groups.forEach(g => {
+            const item = document.createElement('a');
+            item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+            item.innerHTML = `<span>${g.name}</span>`;
+            item.onclick = () => loadGroupDetails(g.id);
+            list.appendChild(item);
+        });
+    }
+
+    async function createGroup() {
+        const name = document.getElementById('new-group-name').value;
+        if(!name) return;
+        await api('/groups', 'POST', { name });
+        document.getElementById('new-group-name').value = '';
+        loadGroups();
+    }
+
+    // --- GROUP DETAILS ---
+    async function loadGroupDetails(id) {
+        currentGroupId = id;
+        const res = await api(`/groups/${id}/details`);
+        if(!res.ok) return;
+        const data = await res.json();
+        groupMembersData = data.members;
+
+        document.getElementById('group-title').innerText = data.group_name;
+
+        // 1. Matches Tab
+        const mList = document.getElementById('matches-list');
+        mList.innerHTML = '';
+        data.matches.forEach(m => {
+            mList.innerHTML += `<div class="list-group-item">
+                <strong>${m.winner}</strong> def. ${m.loser} (${m.score})
+                <span class="text-muted float-end small">${m.date}</span>
+            </div>`;
+        });
+
+        // Admin Controls (Matches)
+        const adminMatchDiv = document.getElementById('admin-match-controls');
+        adminMatchDiv.style.display = data.is_user_admin ? 'block' : 'none';
+        if(data.is_user_admin) populatePlayerDropdowns(data.members);
+
+        // 2. Leaderboard Tab
+        const lBody = document.getElementById('leaderboard-body');
+        lBody.innerHTML = '';
+        data.leaderboard.forEach((p, idx) => {
+            lBody.innerHTML += `<tr><td>${idx+1}</td><td>${p.username}</td><td>${p.elo}</td></tr>`;
+        });
+
+        // 3. Members Tab
+        const memList = document.getElementById('members-list');
+        memList.innerHTML = '';
+        data.members.forEach(p => {
+            let adminBadge = p.is_admin ? '<span class="badge bg-warning text-dark ms-2">Admin</span>' : '';
+            let makeAdminBtn = (data.is_user_admin && !p.is_admin) ?
+                `<button class="btn btn-sm btn-outline-warning float-end" onclick="makeAdmin(${p.id})">Make Admin</button>` : '';
+            memList.innerHTML += `<li class="list-group-item">${p.username} ${adminBadge} ${makeAdminBtn}</li>`;
+        });
+
+        const adminMemDiv = document.getElementById('admin-member-controls');
+        adminMemDiv.style.display = data.is_user_admin ? 'flex' : 'none';
+
+        showScreen('group-screen');
+        switchTab('matches'); // Default tab
+    }
+
+    function populatePlayerDropdowns(members) {
+        const win = document.getElementById('match-winner');
+        const los = document.getElementById('match-loser');
+        win.innerHTML = '<option value="">Winner...</option>';
+        los.innerHTML = '<option value="">Loser...</option>';
+        members.forEach(m => {
+            win.innerHTML += `<option value="${m.id}">${m.username}</option>`;
+            los.innerHTML += `<option value="${m.id}">${m.username}</option>`;
+        });
+    }
+
+    async function addMatch() {
+        const winnerId = document.getElementById('match-winner').value;
+        const loserId = document.getElementById('match-loser').value;
+        const score = document.getElementById('match-score').value;
+        if(!winnerId || !loserId || winnerId === loserId) return alert("Invalid players");
+
+        await api(`/groups/${currentGroupId}/add_match`, 'POST', {
+            winner_id: winnerId, loser_id: loserId, score
+        });
+        loadGroupDetails(currentGroupId);
+    }
+
+    async function addMember() {
+        const username = document.getElementById('new-member-username').value;
+        const res = await api(`/groups/${currentGroupId}/add_member`, 'POST', { username });
+        if(res.ok) {
+            document.getElementById('new-member-username').value = '';
+            loadGroupDetails(currentGroupId);
+        } else {
+            alert("User not found or already in group");
+        }
+    }
+
+    async function makeAdmin(userId) {
+        if(confirm("Make this user an admin?")) {
+            await api(`/groups/${currentGroupId}/make_admin`, 'POST', { user_id: userId });
+            loadGroupDetails(currentGroupId);
+        }
+    }
+</script>
+</body>
+</html>
