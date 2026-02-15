@@ -68,7 +68,6 @@
         .prob-fill-blue { background-color: #0d6efd; height: 100%; transition: width 0.3s; }
         .prob-fill-orange { background-color: #fd7e14; height: 100%; transition: width 0.3s; }
 
-        /* Utility text colors for Orange since Bootstrap doesn't have text-orange by default */
         .text-orange { color: #fd7e14 !important; }
     </style>
 </head>
@@ -81,7 +80,7 @@
         <div class="d-flex align-items-center">
             <span class="me-2"><i class="bi bi-person-circle"></i> <span id="header-username" class="d-none d-sm-inline fw-bold"></span></span>
             <button class="btn btn-sm btn-outline-secondary me-2" onclick="showScreen('profile-screen')">Profile</button>
-            <button class="btn btn-sm btn-outline-danger" onclick="logout()">Exit</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="logout()">Logout</button>
         </div>
     </div>
 
@@ -111,7 +110,7 @@
             <h3>Edit Profile</h3>
             <label class="form-label">New Username</label>
             <input type="text" id="profile-username" class="form-control mb-3">
-            <label class="form-label">New Password</label>
+            <label class="form-label">New Password (leave blank to keep current)</label>
             <input type="password" id="profile-password" class="form-control mb-3">
             <button class="btn btn-primary w-100" onclick="updateProfile()">Save Changes</button>
         </div>
@@ -126,7 +125,7 @@
 
         <ul class="nav nav-tabs nav-fill mb-3" id="groupTabs">
             <li class="nav-item"><a id="nav-link-matches" class="nav-link active" onclick="switchTab('matches')">Matches</a></li>
-            <li class="nav-item"><a id="nav-link-leaderboard" class="nav-link" onclick="switchTab('leaderboard')">Ranks</a></li>
+            <li class="nav-item"><a id="nav-link-leaderboard" class="nav-link" onclick="switchTab('leaderboard')">Leaderboard</a></li>
             <li class="nav-item"><a id="nav-link-members" class="nav-link" onclick="switchTab('members')">Members</a></li>
         </ul>
 
@@ -183,8 +182,8 @@
                                 </select>
                             </div>
                             <div class="col-6">
-                                <label class="small text-muted">Score</label>
-                                <input type="text" id="match-score" class="form-control" placeholder="e.g. 21-19">
+                                <label class="small text-muted">Result</label>
+                                <input type="text" id="match-score" class="form-control" placeholder="Optional">
                             </div>
                             <div class="col-12">
                                 <label class="small text-muted">Date</label>
@@ -208,7 +207,9 @@
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h5>Rating History</h5>
                     <div class="btn-group" role="group">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('1W')">1W</button>
                         <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('1M')">1M</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('1Y')">1Y</button>
                         <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('ALL')">All</button>
                     </div>
                 </div>
@@ -362,7 +363,7 @@
         switchMatchSubTab('pair');
     }
 
-    // --- 4-COLUMN PAIRING LOGIC (Blue/Orange) ---
+    // --- 4-COLUMN PAIRING LOGIC ---
     function setupMatchControls() {
         const interface = document.getElementById('pairing-interface');
         const warning = document.getElementById('admin-only-msg');
@@ -371,9 +372,8 @@
             interface.style.display = 'block';
             warning.style.display = 'none';
 
-            // Initialize selection state
             playerSelectionState = {};
-            memberList.forEach(m => playerSelectionState[m.id] = 0); // All in pool
+            memberList.forEach(m => playerSelectionState[m.id] = 0);
             renderPairingColumns();
 
             document.getElementById('match-score').value = '';
@@ -404,26 +404,21 @@
             div.innerText = m.username;
 
             if (state === 0) {
-                // In Pool: Show in Col 1 and Col 4
                 let itemL = div.cloneNode(true);
                 itemL.classList.add('item-pool-l');
-                itemL.onclick = () => updatePlayerState(m.id, 1); // Add to T1
+                itemL.onclick = () => updatePlayerState(m.id, 1);
                 col1.appendChild(itemL);
 
                 let itemR = div.cloneNode(true);
                 itemR.classList.add('item-pool-r');
-                itemR.onclick = () => updatePlayerState(m.id, 2); // Add to T2
+                itemR.onclick = () => updatePlayerState(m.id, 2);
                 col4.appendChild(itemR);
-
             } else if (state === 1) {
-                // In Team 1 (Blue)
                 div.classList.add('item-team1');
                 div.innerHTML = `<i class="bi bi-x"></i> ${m.username}`;
                 div.onclick = () => updatePlayerState(m.id, 0);
                 col2.appendChild(div);
-
             } else if (state === 2) {
-                // In Team 2 (Orange)
                 div.classList.add('item-team2');
                 div.innerHTML = `${m.username} <i class="bi bi-x"></i>`;
                 div.onclick = () => updatePlayerState(m.id, 0);
@@ -479,7 +474,7 @@
         const date = document.getElementById('match-date').value;
 
         if(t1.length === 0 || t2.length === 0) return alert("Select players for both teams");
-        if(!score) return alert("Enter score");
+        // Score is now optional
 
         const winners = (outcome === 'team1') ? t1 : t2;
         const losers = (outcome === 'team1') ? t2 : t1;
@@ -519,7 +514,7 @@
                             <span class="text-danger">${m.losers}</span>
                         </div>
                         <div class="d-flex align-items-center small text-muted">
-                            <span class="badge bg-light text-dark border me-2">${m.score}</span>
+                            <span class="badge bg-light text-dark border me-2">${m.score || '-'}</span>
                             ${m.date}
                         </div>
                     </div>
@@ -532,14 +527,18 @@
         const body = document.getElementById('leaderboard-body');
         body.innerHTML = '';
         data.forEach((p, idx) => {
-            body.innerHTML += `<tr><td>${idx+1}</td><td>${p.username}</td><td>${p.rating}</td></tr>`;
+            // Scale x100 and round
+            const scaledRating = Math.round(p.rating * 100);
+            body.innerHTML += `<tr><td>${idx+1}</td><td>${p.username}</td><td>${scaledRating}</td></tr>`;
         });
     }
 
     function updateChartRange(range) {
         const now = new Date();
         let startDate = null;
-        if (range === '1M') startDate = new Date(now.setMonth(now.getMonth() - 1));
+        if (range === '1W') startDate = new Date(now.setDate(now.getDate() - 7));
+        else if (range === '1M') startDate = new Date(now.setMonth(now.getMonth() - 1));
+        else if (range === '1Y') startDate = new Date(now.setFullYear(now.getFullYear() - 1));
 
         const filtered = fullGraphData.map(d => ({
             ...d, data: d.data.filter(p => !startDate || new Date(p.x) >= startDate)
@@ -567,7 +566,7 @@
         list.innerHTML = '';
         members.forEach(p => {
             let badge = p.is_admin ? '<span class="badge bg-warning text-dark ms-2">Admin</span>' : '';
-            let btn = (isAdmin && !p.is_admin) ? `<button class="btn btn-sm btn-outline-warning float-end" onclick="makeAdmin(${p.id})">Promote</button>` : '';
+            let btn = (isAdmin && !p.is_admin) ? `<button class="btn btn-sm btn-outline-warning float-end" onclick="makeAdmin(${p.id})">Make Admin</button>` : '';
             list.innerHTML += `<li class="list-group-item">${p.username} ${badge} ${btn}</li>`;
         });
         document.getElementById('admin-member-controls').style.display = isAdmin ? 'flex' : 'none';
