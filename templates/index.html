@@ -13,6 +13,60 @@
         .screen { display: none; }
         .active-screen { display: block; }
         .nav-link { cursor: pointer; }
+
+        /* 4-COLUMN PAIRING STYLES */
+        .pair-col-header {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .pair-list-container {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            background-color: #fff;
+            border-radius: 4px;
+        }
+
+        .player-item {
+            padding: 6px 4px;
+            font-size: 0.8rem;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: background 0.1s;
+            text-align: center;
+        }
+
+        /* Col 1: Add to Team 1 (Left Pool) */
+        .item-pool-l { color: #198754; }
+        .item-pool-l:hover { background-color: #e8f5e9; font-weight: bold; }
+        .item-pool-l::after { content: " >"; font-weight: bold; font-size: 0.7rem; opacity: 0.5; }
+
+        /* Col 4: Add to Team 2 (Right Pool) */
+        .item-pool-r { color: #dc3545; }
+        .item-pool-r:hover { background-color: #f8d7da; font-weight: bold; }
+        .item-pool-r::before { content: "< "; font-weight: bold; font-size: 0.7rem; opacity: 0.5; }
+
+        /* Col 2: Team 1 (Selected) */
+        .item-team1 { background-color: #d1e7dd; color: #0f5132; border-color: #badbcc; font-weight: 500; }
+
+        /* Col 3: Team 2 (Selected) */
+        .item-team2 { background-color: #f8d7da; color: #842029; border-color: #f5c2c7; font-weight: 500; }
+
+        /* PROBABILITY BAR */
+        .prob-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: bold; font-size: 0.9rem; }
+        .prob-progress { flex-grow: 1; height: 16px; background: #e9ecef; border-radius: 8px; overflow: hidden; margin: 0 8px; display: flex; }
+        .prob-fill-green { background-color: #198754; height: 100%; transition: width 0.3s; }
+        .prob-fill-red { background-color: #dc3545; height: 100%; transition: width 0.3s; }
     </style>
 </head>
 <body class="bg-light">
@@ -20,12 +74,11 @@
 <div class="container mt-3 mb-5">
 
     <div id="user-header" class="d-flex justify-content-between align-items-center mb-4 p-2 border-bottom bg-white rounded shadow-sm" style="display:none !important;">
-        <h4 class="m-0 text-primary">TrueSkill League</h4>
+        <h4 class="m-0 text-primary">TrueSkill</h4>
         <div class="d-flex align-items-center">
-            <span class="me-3"><i class="bi bi-person-circle"></i> <span id="header-username" class="fw-bold"></span>
-            <span id="header-admin-badge" class="badge bg-warning text-dark ms-1" style="display:none;">Admin</span></span>
+            <span class="me-2"><i class="bi bi-person-circle"></i> <span id="header-username" class="d-none d-sm-inline fw-bold"></span></span>
             <button class="btn btn-sm btn-outline-secondary me-2" onclick="showScreen('profile-screen')">Profile</button>
-            <button class="btn btn-sm btn-outline-danger" onclick="logout()">Logout</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="logout()">Exit</button>
         </div>
     </div>
 
@@ -44,7 +97,7 @@
         <h2 class="mb-4">Your Groups</h2>
         <div class="input-group mb-3">
             <input type="text" id="new-group-name" class="form-control" placeholder="New Group Name">
-            <button class="btn btn-success" onclick="createGroup()">Create Group</button>
+            <button class="btn btn-success" onclick="createGroup()">Create</button>
         </div>
         <div id="groups-list" class="list-group"></div>
     </div>
@@ -62,86 +115,114 @@
     </div>
 
     <div id="group-screen" class="screen">
-        <button class="btn btn-secondary mb-3" onclick="showScreen('dashboard-screen')">&larr; Back</button>
-        <h2 id="group-title">Group Name</h2>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <button class="btn btn-sm btn-secondary" onclick="showScreen('dashboard-screen')">&larr; Back</button>
+            <h4 id="group-title" class="m-0">Group</h4>
+            <div style="width: 40px;"></div>
+        </div>
 
-        <ul class="nav nav-tabs mb-3" id="groupTabs">
+        <ul class="nav nav-tabs nav-fill mb-3" id="groupTabs">
             <li class="nav-item"><a id="nav-link-matches" class="nav-link active" onclick="switchTab('matches')">Matches</a></li>
-            <li class="nav-item"><a id="nav-link-leaderboard" class="nav-link" onclick="switchTab('leaderboard')">Leaderboard & Graph</a></li>
+            <li class="nav-item"><a id="nav-link-leaderboard" class="nav-link" onclick="switchTab('leaderboard')">Ranks</a></li>
             <li class="nav-item"><a id="nav-link-members" class="nav-link" onclick="switchTab('members')">Members</a></li>
         </ul>
 
         <div id="tab-matches" class="tab-content active-tab">
-            <div id="admin-match-controls" class="card p-3 mb-3 bg-white shadow-sm" style="display:none;">
-                <h5>Add Match</h5>
 
-                <div class="row g-2">
-                    <div class="col-md-5">
-                        <label class="small fw-bold">Team 1 Players (Ctrl+Click)</label>
-                        <select id="team1-select" class="form-select" multiple size="4" onchange="calculateProb()"></select>
-                    </div>
-                    <div class="col-md-2 d-flex flex-column align-items-center justify-content-center">
-                        <span class="fw-bold">VS</span>
-                    </div>
-                    <div class="col-md-5">
-                        <label class="small fw-bold">Team 2 Players (Ctrl+Click)</label>
-                        <select id="team2-select" class="form-select" multiple size="4" onchange="calculateProb()"></select>
-                    </div>
-                </div>
+            <ul class="nav nav-pills mb-3 justify-content-center" id="matchSubTabs">
+                <li class="nav-item"><button class="nav-link active" id="subtab-btn-pair" onclick="switchMatchSubTab('pair')">New Match</button></li>
+                <li class="nav-item"><button class="nav-link" id="subtab-btn-history" onclick="switchMatchSubTab('history')">History</button></li>
+            </ul>
 
-                <div class="alert alert-info mt-2 p-2 text-center" id="prob-display">
-                    Select players to see win probability...
-                </div>
+            <div id="subtab-pair" style="display:block;">
+                <div id="admin-only-msg" class="alert alert-warning text-center" style="display:none;">Only admins can add matches.</div>
 
-                <div class="row g-2 mt-2 align-items-end">
-                    <div class="col-md-4">
-                        <label class="small text-muted">Who Won?</label>
-                        <select id="match-outcome" class="form-select">
-                            <option value="team1">Team 1 Won</option>
-                            <option value="team2">Team 2 Won</option>
-                        </select>
+                <div id="pairing-interface" style="display:none;">
+
+                    <div class="prob-container" id="prob-container" style="display:none;">
+                        <span class="text-success" id="prob-text-t1">50%</span>
+                        <div class="prob-progress">
+                            <div id="prob-fill-green" class="prob-fill-green" style="width: 50%"></div>
+                            <div id="prob-fill-red" class="prob-fill-red" style="width: 50%"></div>
+                        </div>
+                        <span class="text-danger" id="prob-text-t2">50%</span>
                     </div>
-                    <div class="col-md-3">
-                        <label class="small text-muted">Score</label>
-                        <input type="text" id="match-score" class="form-control" placeholder="e.g. 3-1">
+
+                    <div class="row g-1 mb-3">
+                        <div class="col-3">
+                            <div class="pair-col-header text-success"><i class="bi bi-plus-circle"></i> T1</div>
+                            <div id="col-pool-l" class="pair-list-container"></div>
+                        </div>
+
+                        <div class="col-3">
+                            <div class="pair-col-header text-success" style="background:#e8f5e9;">TEAM 1</div>
+                            <div id="col-team1" class="pair-list-container" style="border-color:#198754;"></div>
+                        </div>
+
+                        <div class="col-3">
+                            <div class="pair-col-header text-danger" style="background:#f8d7da;">TEAM 2</div>
+                            <div id="col-team2" class="pair-list-container" style="border-color:#dc3545;"></div>
+                        </div>
+
+                        <div class="col-3">
+                            <div class="pair-col-header text-danger">T2 <i class="bi bi-plus-circle"></i></div>
+                            <div id="col-pool-r" class="pair-list-container"></div>
+                        </div>
                     </div>
-                    <div class="col-md-3">
-                        <label class="small text-muted">Date</label>
-                        <input type="datetime-local" id="match-date" class="form-control">
-                    </div>
-                    <div class="col-md-2">
-                        <button class="btn btn-primary w-100" onclick="saveMatch()">Add Match</button>
+
+                    <div class="card p-3 shadow-sm border-0">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="small text-muted">Winner</label>
+                                <select id="match-outcome" class="form-select">
+                                    <option value="team1">Team 1 (Green)</option>
+                                    <option value="team2">Team 2 (Red)</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="small text-muted">Score</label>
+                                <input type="text" id="match-score" class="form-control" placeholder="e.g. 21-19">
+                            </div>
+                            <div class="col-12">
+                                <label class="small text-muted">Date</label>
+                                <input type="datetime-local" id="match-date" class="form-control">
+                            </div>
+                            <div class="col-12 mt-2">
+                                <button class="btn btn-primary w-100" onclick="saveMatch()">Record Match</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div id="matches-list" class="list-group"></div>
+            <div id="subtab-history" style="display:none;">
+                <div id="matches-list" class="list-group"></div>
+            </div>
         </div>
 
         <div id="tab-leaderboard" class="tab-content" style="display:none;">
             <div class="card p-3 mb-4 shadow-sm">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h5>TrueSkill History</h5>
+                    <h5>Rating History</h5>
                     <div class="btn-group" role="group">
-                        <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('1W')">1W</button>
                         <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('1M')">1M</button>
                         <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('ALL')">All</button>
                     </div>
                 </div>
-                <div style="position: relative; height: 300px; width: 100%;">
+                <div style="position: relative; height: 250px; width: 100%;">
                     <canvas id="eloChart"></canvas>
                 </div>
             </div>
             <table class="table table-striped bg-white shadow-sm">
-                <thead><tr><th>Rank</th><th>Player</th><th>Rating (Conservative)</th></tr></thead>
+                <thead><tr><th>#</th><th>Player</th><th>Rating</th></tr></thead>
                 <tbody id="leaderboard-body"></tbody>
             </table>
         </div>
 
         <div id="tab-members" class="tab-content" style="display:none;">
             <div id="admin-member-controls" class="input-group mb-3" style="display:none;">
-                <input type="text" id="new-member-username" class="form-control" placeholder="Username to add">
-                <button class="btn btn-primary" onclick="addMember()">Add Member</button>
+                <input type="text" id="new-member-username" class="form-control" placeholder="Username">
+                <button class="btn btn-primary" onclick="addMember()">Add</button>
             </div>
             <ul id="members-list" class="list-group shadow-sm"></ul>
         </div>
@@ -156,7 +237,9 @@
     let fullGraphData = [];
     let memberList = [];
 
-    // --- NAVIGATION ---
+    // 0 = Pool, 1 = Team 1, 2 = Team 2
+    let playerSelectionState = {};
+
     function showScreen(id) {
         document.querySelectorAll('.screen').forEach(el => el.classList.remove('active-screen'));
         document.getElementById(id).classList.add('active-screen');
@@ -165,8 +248,6 @@
         else {
             header.style.setProperty('display', 'flex', 'important');
             document.getElementById('header-username').innerText = currentUser;
-            const badge = document.getElementById('header-admin-badge');
-            badge.style.display = (id === 'group-screen' && isAdmin) ? 'inline-block' : 'none';
         }
         if(id === 'dashboard-screen') loadGroups();
         if(id === 'profile-screen') {
@@ -181,6 +262,16 @@
         document.getElementById('tab-' + tabName).style.display = 'block';
         const link = document.getElementById('nav-link-' + tabName);
         if(link) link.classList.add('active');
+    }
+
+    function switchMatchSubTab(subTab) {
+        document.getElementById('subtab-pair').style.display = 'none';
+        document.getElementById('subtab-history').style.display = 'none';
+        document.getElementById('subtab-btn-pair').classList.remove('active');
+        document.getElementById('subtab-btn-history').classList.remove('active');
+
+        document.getElementById('subtab-' + subTab).style.display = 'block';
+        document.getElementById('subtab-btn-' + subTab).classList.add('active');
     }
 
     async function api(url, method='GET', data=null) {
@@ -265,56 +356,123 @@
 
         showScreen('group-screen');
         switchTab('matches');
+        switchMatchSubTab('pair');
     }
 
-    // --- ADD MATCH LOGIC (Multi-User) ---
+    // --- 4-COLUMN PAIRING LOGIC ---
     function setupMatchControls() {
-        const div = document.getElementById('admin-match-controls');
-        div.style.display = isAdmin ? 'block' : 'none';
-        if(isAdmin) {
-            const t1 = document.getElementById('team1-select');
-            const t2 = document.getElementById('team2-select');
-            t1.innerHTML = ''; t2.innerHTML = '';
-            memberList.forEach(m => {
-                t1.innerHTML += `<option value="${m.id}">${m.username}</option>`;
-                t2.innerHTML += `<option value="${m.id}">${m.username}</option>`;
-            });
-            // Reset fields
+        const interface = document.getElementById('pairing-interface');
+        const warning = document.getElementById('admin-only-msg');
+
+        if (isAdmin) {
+            interface.style.display = 'block';
+            warning.style.display = 'none';
+
+            // Initialize selection state
+            playerSelectionState = {};
+            memberList.forEach(m => playerSelectionState[m.id] = 0); // All in pool
+            renderPairingColumns();
+
             document.getElementById('match-score').value = '';
-            document.getElementById('prob-display').className = 'alert alert-info mt-2 p-2 text-center';
-            document.getElementById('prob-display').innerText = 'Select players...';
+            document.getElementById('prob-container').style.display = 'none';
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
             document.getElementById('match-date').value = now.toISOString().slice(0,16);
+
+        } else {
+            interface.style.display = 'none';
+            warning.style.display = 'block';
         }
     }
 
-    function getSelectedValues(selectId) {
-        return Array.from(document.getElementById(selectId).selectedOptions).map(opt => parseInt(opt.value));
+    function renderPairingColumns() {
+        const col1 = document.getElementById('col-pool-l');
+        const col2 = document.getElementById('col-team1');
+        const col3 = document.getElementById('col-team2');
+        const col4 = document.getElementById('col-pool-r');
+
+        [col1, col2, col3, col4].forEach(c => c.innerHTML = '');
+
+        memberList.forEach(m => {
+            const state = playerSelectionState[m.id];
+
+            const div = document.createElement('div');
+            div.className = 'player-item';
+            div.innerText = m.username;
+
+            if (state === 0) {
+                // In Pool: Show in Col 1 and Col 4
+                // Clone for Col 1
+                let itemL = div.cloneNode(true);
+                itemL.classList.add('item-pool-l');
+                itemL.onclick = () => updatePlayerState(m.id, 1); // Add to T1
+                col1.appendChild(itemL);
+
+                // Clone for Col 4
+                let itemR = div.cloneNode(true);
+                itemR.classList.add('item-pool-r');
+                itemR.onclick = () => updatePlayerState(m.id, 2); // Add to T2
+                col4.appendChild(itemR);
+
+            } else if (state === 1) {
+                // In Team 1
+                div.classList.add('item-team1');
+                div.innerHTML = `<i class="bi bi-x"></i> ${m.username}`;
+                div.onclick = () => updatePlayerState(m.id, 0); // Remove
+                col2.appendChild(div);
+
+            } else if (state === 2) {
+                // In Team 2
+                div.classList.add('item-team2');
+                div.innerHTML = `${m.username} <i class="bi bi-x"></i>`;
+                div.onclick = () => updatePlayerState(m.id, 0); // Remove
+                col3.appendChild(div);
+            }
+        });
+    }
+
+    function updatePlayerState(id, newState) {
+        playerSelectionState[id] = newState;
+        renderPairingColumns();
+        calculateProb();
+    }
+
+    function getTeamsFromState() {
+        let t1 = [];
+        let t2 = [];
+        for (const [uid, state] of Object.entries(playerSelectionState)) {
+            if (state === 1) t1.push(parseInt(uid));
+            if (state === 2) t2.push(parseInt(uid));
+        }
+        return { t1, t2 };
     }
 
     async function calculateProb() {
-        const t1 = getSelectedValues('team1-select');
-        const t2 = getSelectedValues('team2-select');
-        if (t1.length === 0 || t2.length === 0) return;
+        const { t1, t2 } = getTeamsFromState();
+        const probContainer = document.getElementById('prob-container');
+
+        if (t1.length === 0 || t2.length === 0) {
+            probContainer.style.display = 'none';
+            return;
+        }
 
         const res = await api('/predict', 'POST', { group_id: currentGroupId, team1_ids: t1, team2_ids: t2 });
         const data = await res.json();
-        const t1Win = (data.win_prob * 100).toFixed(1);
-        const t2Win = (100 - t1Win).toFixed(1);
 
-        const el = document.getElementById('prob-display');
-        el.innerText = `Team 1 Win: ${t1Win}% | Team 2 Win: ${t2Win}%`;
+        const t1Win = (data.win_prob * 100).toFixed(0);
+        const t2Win = (100 - t1Win).toFixed(0);
 
-        // Color coding
-        if(t1Win > 60) el.className = 'alert alert-success mt-2 p-2 text-center';
-        else if (t2Win > 60) el.className = 'alert alert-danger mt-2 p-2 text-center';
-        else el.className = 'alert alert-warning mt-2 p-2 text-center';
+        probContainer.style.display = 'flex';
+
+        document.getElementById('prob-text-t1').innerText = t1Win + '%';
+        document.getElementById('prob-text-t2').innerText = t2Win + '%';
+
+        document.getElementById('prob-fill-green').style.width = t1Win + '%';
+        document.getElementById('prob-fill-red').style.width = t2Win + '%';
     }
 
     async function saveMatch() {
-        const t1 = getSelectedValues('team1-select');
-        const t2 = getSelectedValues('team2-select');
+        const { t1, t2 } = getTeamsFromState();
         const outcome = document.getElementById('match-outcome').value;
         const score = document.getElementById('match-score').value;
         const date = document.getElementById('match-date').value;
@@ -322,21 +480,22 @@
         if(t1.length === 0 || t2.length === 0) return alert("Select players for both teams");
         if(!score) return alert("Enter score");
 
-        // Determine Winners and Losers based on outcome selection
         const winners = (outcome === 'team1') ? t1 : t2;
         const losers = (outcome === 'team1') ? t2 : t1;
 
         const payload = { winners, losers, score, date };
         const res = await api(`/groups/${currentGroupId}/add_match`, 'POST', payload);
         if(res.ok) {
+            alert("Match saved!");
             loadGroupDetails(currentGroupId);
+            switchMatchSubTab('history');
         } else {
             alert("Error adding match");
         }
     }
 
     async function deleteMatch(id) {
-        if(confirm("Are you sure?")) {
+        if(confirm("Delete this match? Ratings will be recalculated.")) {
             await api(`/matches/${id}`, 'DELETE');
             loadGroupDetails(currentGroupId);
         }
@@ -346,14 +505,22 @@
     function renderMatches(matches) {
         const list = document.getElementById('matches-list');
         list.innerHTML = '';
+        if(matches.length === 0) list.innerHTML = '<div class="text-center text-muted mt-3">No matches yet.</div>';
+
         matches.forEach(m => {
-            let delBtn = isAdmin ? `<button class="btn btn-sm btn-link text-danger p-0" onclick="deleteMatch(${m.id})"><i class="bi bi-trash fs-5"></i></button>` : '';
+            let delBtn = isAdmin ? `<button class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="deleteMatch(${m.id})"><i class="bi bi-trash fs-5"></i></button>` : '';
             list.innerHTML += `
                 <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>${m.winners}</strong> def. ${m.losers}
-                        <span class="badge bg-light text-dark border mx-2">${m.score}</span>
-                        <div class="text-muted small">${m.date}</div>
+                    <div class="flex-grow-1">
+                        <div class="mb-1">
+                            <span class="text-success fw-bold">${m.winners}</span>
+                            <span class="text-muted mx-1">def.</span>
+                            <span class="text-danger">${m.losers}</span>
+                        </div>
+                        <div class="d-flex align-items-center small text-muted">
+                            <span class="badge bg-light text-dark border me-2">${m.score}</span>
+                            ${m.date}
+                        </div>
                     </div>
                     ${delBtn}
                 </div>`;
@@ -371,8 +538,7 @@
     function updateChartRange(range) {
         const now = new Date();
         let startDate = null;
-        if (range === '1W') startDate = new Date(now.setDate(now.getDate() - 7));
-        else if (range === '1M') startDate = new Date(now.setMonth(now.getMonth() - 1));
+        if (range === '1M') startDate = new Date(now.setMonth(now.getMonth() - 1));
 
         const filtered = fullGraphData.map(d => ({
             ...d, data: d.data.filter(p => !startDate || new Date(p.x) >= startDate)
@@ -387,9 +553,10 @@
                 responsive: true, maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 scales: {
-                    x: { type: 'time', time: { unit: 'day' }, title: { display: true, text: 'Date' } },
-                    y: { title: { display: true, text: 'TrueSkill' } }
-                }
+                    x: { type: 'time', time: { unit: 'day' }, title: { display: false } },
+                    y: { title: { display: true, text: 'Rating' } }
+                },
+                plugins: { legend: { display: false } }
             }
         });
     }
@@ -415,7 +582,6 @@
         if(confirm("Promote?")) { await api(`/groups/${currentGroupId}/make_admin`, 'POST', { user_id: uid }); loadGroupDetails(currentGroupId); }
     }
 
-    // INIT
     window.addEventListener('DOMContentLoaded', async () => {
         try {
             const res = await api('/session');
