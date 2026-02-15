@@ -14,7 +14,7 @@
         .active-screen { display: block; }
         .nav-link { cursor: pointer; }
 
-        /* 4-COLUMN PAIRING STYLES - BLUE / ORANGE THEME */
+        /* 4-COLUMN PAIRING STYLES */
         .pair-col-header {
             font-size: 0.75rem;
             text-transform: uppercase;
@@ -62,7 +62,7 @@
         /* Col 3: Team 2 (Selected - Orange) */
         .item-team2 { background-color: #ffe5d0; color: #663300; border-color: #ffecb5; font-weight: 600; }
 
-        /* PROBABILITY BAR - BLUE / ORANGE */
+        /* PROBABILITY BAR */
         .prob-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: bold; font-size: 0.9rem; }
         .prob-progress { flex-grow: 1; height: 16px; background: #e9ecef; border-radius: 8px; overflow: hidden; margin: 0 8px; display: flex; }
         .prob-fill-blue { background-color: #0d6efd; height: 100%; transition: width 0.3s; }
@@ -73,6 +73,20 @@
         /* Clickable Username */
         .clickable-profile { cursor: pointer; transition: color 0.2s; }
         .clickable-profile:hover { color: #0d6efd; }
+
+        /* Custom Toggle Button Styles */
+        .btn-check:checked + .btn-outline-primary {
+            background-color: #0d6efd; color: white; border-color: #0d6efd;
+        }
+        .btn-check:checked + .btn-outline-orange {
+            background-color: #fd7e14; color: white; border-color: #fd7e14;
+        }
+        .btn-outline-orange {
+            color: #fd7e14; border-color: #fd7e14;
+        }
+        .btn-outline-orange:hover {
+            background-color: #fd7e14; color: white;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -102,7 +116,6 @@
     </div>
 
     <div id="dashboard-screen" class="screen">
-
         <div class="card p-3 mb-4 border-0 shadow-sm">
             <label class="form-label fw-bold text-secondary">Create New Group</label>
             <div class="input-group">
@@ -110,7 +123,6 @@
                 <button class="btn btn-success" onclick="createGroup()">Create</button>
             </div>
         </div>
-
         <h3 class="mb-3">Your Groups</h3>
         <div id="groups-list" class="list-group"></div>
     </div>
@@ -166,17 +178,14 @@
                             <div class="pair-col-header text-primary"><i class="bi bi-plus-circle"></i> T1</div>
                             <div id="col-pool-l" class="pair-list-container"></div>
                         </div>
-
                         <div class="col-3">
                             <div class="pair-col-header text-primary" style="background:#cfe2ff;">TEAM 1</div>
                             <div id="col-team1" class="pair-list-container" style="border-color:#0d6efd;"></div>
                         </div>
-
                         <div class="col-3">
                             <div class="pair-col-header text-orange" style="background:#ffe5d0;">TEAM 2</div>
                             <div id="col-team2" class="pair-list-container" style="border-color:#fd7e14;"></div>
                         </div>
-
                         <div class="col-3">
                             <div class="pair-col-header text-orange">T2 <i class="bi bi-plus-circle"></i></div>
                             <div id="col-pool-r" class="pair-list-container"></div>
@@ -184,21 +193,25 @@
                     </div>
 
                     <div class="card p-3 shadow-sm border-0">
+                        <div class="mb-3">
+                            <label class="small text-muted mb-1 d-block">Who Won?</label>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="winner-btn" id="btn-win-t1" value="team1" checked>
+                                <label class="btn btn-outline-primary" for="btn-win-t1">Blue Team</label>
+
+                                <input type="radio" class="btn-check" name="winner-btn" id="btn-win-t2" value="team2">
+                                <label class="btn btn-outline-orange" for="btn-win-t2">Orange Team</label>
+                            </div>
+                        </div>
+
                         <div class="row g-2">
                             <div class="col-6">
-                                <label class="small text-muted">Winner</label>
-                                <select id="match-outcome" class="form-select">
-                                    <option value="team1">Team 1 (Blue)</option>
-                                    <option value="team2">Team 2 (Orange)</option>
-                                </select>
-                            </div>
-                            <div class="col-6">
-                                <label class="small text-muted">Result</label>
-                                <input type="text" id="match-score" class="form-control" placeholder="Optional">
-                            </div>
-                            <div class="col-12">
                                 <label class="small text-muted">Date</label>
                                 <input type="datetime-local" id="match-date" class="form-control">
+                            </div>
+                            <div class="col-6">
+                                <label class="small text-muted">Result (Optional)</label>
+                                <input type="text" id="match-score" class="form-control" placeholder="e.g. 21-19">
                             </div>
                             <div class="col-12 mt-2">
                                 <button class="btn btn-primary w-100" onclick="saveMatch()">Record Match</button>
@@ -389,6 +402,9 @@
 
             document.getElementById('match-score').value = '';
             document.getElementById('prob-container').style.display = 'none';
+            // Default to Team 1
+            document.getElementById('btn-win-t1').checked = true;
+
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
             document.getElementById('match-date').value = now.toISOString().slice(0,16);
@@ -480,7 +496,8 @@
 
     async function saveMatch() {
         const { t1, t2 } = getTeamsFromState();
-        const outcome = document.getElementById('match-outcome').value;
+        // CHANGE: Get outcome from radio button
+        const outcome = document.querySelector('input[name="winner-btn"]:checked').value;
         const score = document.getElementById('match-score').value;
         const date = document.getElementById('match-date').value;
 
@@ -537,7 +554,6 @@
         const body = document.getElementById('leaderboard-body');
         body.innerHTML = '';
         data.forEach((p, idx) => {
-            // CHANGE: Scale x100
             const scaledRating = Math.round(p.rating * 100);
             body.innerHTML += `<tr><td>${idx+1}</td><td>${p.username}</td><td>${scaledRating}</td></tr>`;
         });
@@ -554,7 +570,7 @@
             ...d,
             data: d.data
                 .filter(p => !startDate || new Date(p.x) >= startDate)
-                .map(p => ({ x: p.x, y: Math.round(p.y * 100) })) // CHANGE: Scale x100
+                .map(p => ({ x: p.x, y: Math.round(p.y * 100) }))
         }));
 
         const ctx = document.getElementById('eloChart').getContext('2d');
