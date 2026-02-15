@@ -14,7 +14,7 @@
         .active-screen { display: block; }
         .nav-link { cursor: pointer; }
 
-        /* 4-COLUMN PAIRING STYLES */
+        /* 4-COLUMN PAIRING STYLES - BLUE / ORANGE THEME */
         .pair-col-header {
             font-size: 0.75rem;
             text-transform: uppercase;
@@ -62,7 +62,7 @@
         /* Col 3: Team 2 (Selected - Orange) */
         .item-team2 { background-color: #ffe5d0; color: #663300; border-color: #ffecb5; font-weight: 600; }
 
-        /* PROBABILITY BAR */
+        /* PROBABILITY BAR - BLUE / ORANGE */
         .prob-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: bold; font-size: 0.9rem; }
         .prob-progress { flex-grow: 1; height: 16px; background: #e9ecef; border-radius: 8px; overflow: hidden; margin: 0 8px; display: flex; }
         .prob-fill-blue { background-color: #0d6efd; height: 100%; transition: width 0.3s; }
@@ -264,8 +264,6 @@
     let eloChartInstance = null;
     let fullGraphData = [];
     let memberList = [];
-
-    // 0 = Pool, 1 = Team 1, 2 = Team 2
     let playerSelectionState = {};
 
     function showScreen(id) {
@@ -402,7 +400,6 @@
 
             document.getElementById('match-score').value = '';
             document.getElementById('prob-container').style.display = 'none';
-            // Default to Team 1
             document.getElementById('btn-win-t1').checked = true;
 
             const now = new Date();
@@ -425,7 +422,6 @@
 
         memberList.forEach(m => {
             const state = playerSelectionState[m.id];
-
             const div = document.createElement('div');
             div.className = 'player-item';
             div.innerText = m.username;
@@ -481,22 +477,18 @@
 
         const res = await api('/predict', 'POST', { group_id: currentGroupId, team1_ids: t1, team2_ids: t2 });
         const data = await res.json();
-
         const t1Win = (data.win_prob * 100).toFixed(0);
         const t2Win = (100 - t1Win).toFixed(0);
 
         probContainer.style.display = 'flex';
-
         document.getElementById('prob-text-t1').innerText = t1Win + '%';
         document.getElementById('prob-text-t2').innerText = t2Win + '%';
-
         document.getElementById('prob-fill-blue').style.width = t1Win + '%';
         document.getElementById('prob-fill-orange').style.width = t2Win + '%';
     }
 
     async function saveMatch() {
         const { t1, t2 } = getTeamsFromState();
-        // CHANGE: Get outcome from radio button
         const outcome = document.querySelector('input[name="winner-btn"]:checked').value;
         const score = document.getElementById('match-score').value;
         const date = document.getElementById('match-date').value;
@@ -512,9 +504,7 @@
             alert("Match saved!");
             loadGroupDetails(currentGroupId);
             switchMatchSubTab('history');
-        } else {
-            alert("Error adding match");
-        }
+        } else alert("Error adding match");
     }
 
     async function deleteMatch(id) {
@@ -585,7 +575,13 @@
                     x: { type: 'time', time: { unit: 'day' }, title: { display: false } },
                     y: { title: { display: true, text: 'Rating' } }
                 },
-                plugins: { legend: { display: false } }
+                plugins: {
+                    legend: {
+                        display: true, // Show Legend
+                        position: 'bottom',
+                        labels: { boxWidth: 12, usePointStyle: true }
+                    }
+                }
             }
         });
     }
