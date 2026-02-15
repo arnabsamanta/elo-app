@@ -70,7 +70,6 @@ def recalculate_group_elos(group_id):
     elo_map = {m.user_id: 1200 for m in members}
 
     matches = Match.query.filter_by(group_id=group_id).all()
-    # Sort safely (handle None)
     matches.sort(key=lambda x: x.timestamp if x.timestamp else datetime.min)
 
     for m in matches:
@@ -91,6 +90,12 @@ def recalculate_group_elos(group_id):
 def home():
     return render_template('index.html')
 
+@app.route('/api/session')
+def check_session():
+    if current_user.is_authenticated:
+        return jsonify({'auth': True, 'username': current_user.username, 'id': current_user.id})
+    return jsonify({'auth': False})
+
 @app.route('/api/signup', methods=['POST'])
 def signup():
     data = request.json
@@ -110,7 +115,8 @@ def login():
     data = request.json
     user = User.query.filter_by(username=data['username']).first()
     if user and check_password_hash(user.password, data['password']):
-        login_user(user)
+        # REMEMBER=TRUE keeps the cookie persistent
+        login_user(user, remember=True)
         return jsonify({'message': 'Logged in', 'username': user.username, 'id': user.id})
     return jsonify({'error': 'Invalid credentials'}), 401
 
@@ -144,7 +150,7 @@ def group_details(group_id):
     if not membership:
         return jsonify({'error': 'Unauthorized'}), 403
 
-    # 1. Matches List
+    # Matches
     matches = Match.query.filter_by(group_id=group_id).all()
     matches.sort(key=lambda x: x.timestamp if x.timestamp else datetime.min, reverse=True)
 
@@ -161,35 +167,28 @@ def group_details(group_id):
             'date': date_display
         })
 
-    # 2. Leaderboard
+    # Leaderboard
     members = GroupMember.query.filter_by(group_id=group_id).order_by(GroupMember.elo_rating.desc()).all()
     leaderboard_data = [{
         'username': m.user.username, 'elo': m.elo_rating, 'is_admin': m.is_admin, 'id': m.user_id
     } for m in members]
 
-    # 3. Graph History (Daily Closing Elo)
+    # Graph
     matches.sort(key=lambda x: x.timestamp if x.timestamp else datetime.min)
-
     elo_map = {m.user_id: 1200 for m in members}
     user_names = {m.user_id: m.user.username for m in members}
     daily_closing_elos = {uid: {} for uid in elo_map}
-
-    # Seed initial point
-    # We can seed "today" or "start of time" as 1200,
-    # but for cleaner graphs we just plot points where activity happens.
 
     for m in matches:
         if m.winner_id in elo_map and m.loser_id in elo_map:
             w_elo = elo_map[m.winner_id]
             l_elo = elo_map[m.loser_id]
             nw, nl = calculate_elo_change(w_elo, l_elo)
-
             elo_map[m.winner_id] = nw
             elo_map[m.loser_id] = nl
 
             ts = m.timestamp if m.timestamp else datetime.utcnow()
             day_key = ts.strftime('%Y-%m-%d')
-
             daily_closing_elos[m.winner_id][day_key] = nw
             daily_closing_elos[m.loser_id][day_key] = nl
 
@@ -201,7 +200,6 @@ def group_details(group_id):
         sorted_dates = sorted(date_map.keys())
         for d in sorted_dates:
             data_points.append({'x': d, 'y': date_map[d]})
-
         if data_points:
             chart_datasets.append({
                 'label': user_names.get(uid, 'Unknown'),
@@ -225,8 +223,7 @@ def group_details(group_id):
 @login_required
 def add_match(group_id):
     membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=group_id).first()
-    if not membership or not membership.is_admin:
-        return jsonify({'error': 'Admin only'}), 403
+    if not membership or not membership.is_admin: return jsonify({'error': 'Admin only'}), 403
 
     data = request.json
     try:
@@ -235,15 +232,10 @@ def add_match(group_id):
         match_date = datetime.utcnow()
 
     match = Match(
-        group_id=group_id,
-        winner_id=data['winner_id'],
-        loser_id=data['loser_id'],
-        score=data['score'],
-        timestamp=match_date
+        group_id=group_id, winner_id=data['winner_id'], loser_id=data['loser_id'], score=data['score'], timestamp=match_date
     )
     db.session.add(match)
     db.session.commit()
-
     recalculate_group_elos(group_id)
     return jsonify({'message': 'Match added'})
 
@@ -252,8 +244,7 @@ def add_match(group_id):
 def manage_match(match_id):
     match = Match.query.get_or_404(match_id)
     membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=match.group_id).first()
-    if not membership or not membership.is_admin:
-        return jsonify({'error': 'Admin only'}), 403
+    if not membership or not membership.is_admin: return jsonify({'error': 'Admin only'}), 403
 
     if request.method == 'DELETE':
         db.session.delete(match)
@@ -266,11 +257,8 @@ def manage_match(match_id):
         match.winner_id = data['winner_id']
         match.loser_id = data['loser_id']
         match.score = data['score']
-        try:
-            match.timestamp = datetime.strptime(data['date'], '%Y-%m-%dT%H:%M')
-        except:
-            pass
-
+        try: match.timestamp = datetime.strptime(data['date'], '%Y-%m-%dT%H:%M')
+        except: pass
         db.session.commit()
         recalculate_group_elos(match.group_id)
         return jsonify({'message': 'Updated'})
@@ -283,7 +271,6 @@ def add_member(group_id):
 
     user_to_add = User.query.filter_by(username=request.json['username']).first()
     if not user_to_add: return jsonify({'error': 'User not found'}), 404
-
     if GroupMember.query.filter_by(user_id=user_to_add.id, group_id=group_id).first():
         return jsonify({'error': 'Already in group'}), 400
 
@@ -297,7 +284,6 @@ def add_member(group_id):
 def make_admin(group_id):
     membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=group_id).first()
     if not membership or not membership.is_admin: return jsonify({'error': 'Admin only'}), 403
-
     target_mem = GroupMember.query.filter_by(user_id=request.json['user_id'], group_id=group_id).first()
     target_mem.is_admin = True
     db.session.commit()

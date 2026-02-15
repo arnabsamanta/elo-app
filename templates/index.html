@@ -126,29 +126,21 @@
     let allMembers = [];
     let fullGraphData = [];
 
-    // --- NAVIGATION FIXED ---
     function showScreen(id) {
         document.querySelectorAll('.screen').forEach(el => el.classList.remove('active-screen'));
         document.getElementById(id).classList.add('active-screen');
         if(id === 'dashboard-screen') loadGroups();
     }
 
-    // Fixed Switch Tab: No longer relies on event.target
     function switchTab(tabName) {
-        // Hide all contents
         document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
-        // Deactivate all nav links
         document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
-
-        // Show specific content
         document.getElementById('tab-' + tabName).style.display = 'block';
 
-        // Activate specific nav link by ID
         const linkObj = document.getElementById('nav-link-' + tabName);
         if(linkObj) linkObj.classList.add('active');
     }
 
-    // --- AUTH & API ---
     async function api(url, method='GET', data=null) {
         const opts = { method, headers: { 'Content-Type': 'application/json' } };
         if (data) opts.body = JSON.stringify(data);
@@ -210,14 +202,10 @@
         renderMatches(data.matches);
         setupMatchControls();
         renderLeaderboard(data.leaderboard);
-
-        // Load graph with 'ALL'
         updateChartRange('ALL');
-
         renderMembers(data.members);
-        showScreen('group-screen');
 
-        // This programmatic call is now safe
+        showScreen('group-screen');
         switchTab('matches');
     }
 
@@ -259,7 +247,7 @@
             data: { datasets: datasets },
             options: {
                 responsive: true,
-                maintainAspectRatio: false, // Important: allows canvas to fit the fixed height div
+                maintainAspectRatio: false,
                 interaction: {
                     mode: 'index',
                     intersect: false,
@@ -281,7 +269,7 @@
         });
     }
 
-    // --- MATCHES TAB ---
+    // --- MATCHES & MEMBERS ---
     function renderMatches(matches) {
         const list = document.getElementById('matches-list');
         list.innerHTML = '';
@@ -339,13 +327,9 @@
         if(!score) return alert("Enter score");
 
         const payload = { winner_id: winnerId, loser_id: loserId, score, date };
-
         let res;
-        if (id) {
-            res = await api(`/matches/${id}`, 'PUT', payload);
-        } else {
-            res = await api(`/groups/${currentGroupId}/add_match`, 'POST', payload);
-        }
+        if (id) res = await api(`/matches/${id}`, 'PUT', payload);
+        else res = await api(`/groups/${currentGroupId}/add_match`, 'POST', payload);
 
         if(res.ok) {
             resetMatchForm();
@@ -357,7 +341,6 @@
         document.getElementById('match-form-title').innerText = "Edit Match";
         document.getElementById('save-match-btn').innerText = "Update";
         document.getElementById('cancel-edit-btn').style.display = 'block';
-
         document.getElementById('edit-match-id').value = match.id;
         document.getElementById('match-winner').value = match.winner_id;
         document.getElementById('match-loser').value = match.loser_id;
@@ -380,13 +363,12 @@
     }
 
     async function deleteMatch(id) {
-        if(confirm("Are you sure? This will recalculate ratings.")) {
+        if(confirm("Are you sure?")) {
             await api(`/matches/${id}`, 'DELETE');
             loadGroupDetails(currentGroupId);
         }
     }
 
-    // --- LEADERBOARD ---
     function renderLeaderboard(data) {
         const body = document.getElementById('leaderboard-body');
         body.innerHTML = '';
@@ -395,7 +377,6 @@
         });
     }
 
-    // --- MEMBERS TAB ---
     function renderMembers(members) {
         const list = document.getElementById('members-list');
         list.innerHTML = '';
@@ -414,9 +395,7 @@
         if(res.ok) {
             document.getElementById('new-member-username').value = '';
             loadGroupDetails(currentGroupId);
-        } else {
-            alert("User error");
-        }
+        } else alert("User error");
     }
 
     async function makeAdmin(userId) {
@@ -425,6 +404,17 @@
             loadGroupDetails(currentGroupId);
         }
     }
+
+    // CHECK SESSION ON LOAD
+    window.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const res = await api('/session');
+            if(res.ok) {
+                const data = await res.json();
+                if(data.auth) showScreen('dashboard-screen');
+            }
+        } catch(e) { console.error("Session check failed", e); }
+    });
 </script>
 </body>
 </html>
