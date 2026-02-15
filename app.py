@@ -96,6 +96,26 @@ def check_session():
         return jsonify({'auth': True, 'username': current_user.username, 'id': current_user.id})
     return jsonify({'auth': False})
 
+@app.route('/api/profile', methods=['PUT'])
+@login_required
+def update_profile():
+    data = request.json
+    new_username = data.get('username')
+    new_password = data.get('password')
+
+    # Update Username
+    if new_username and new_username != current_user.username:
+        if User.query.filter_by(username=new_username).first():
+            return jsonify({'error': 'Username taken'}), 400
+        current_user.username = new_username
+
+    # Update Password
+    if new_password:
+        current_user.password = generate_password_hash(new_password, method='pbkdf2:sha256')
+
+    db.session.commit()
+    return jsonify({'message': 'Profile updated', 'username': current_user.username})
+
 @app.route('/api/signup', methods=['POST'])
 def signup():
     data = request.json
@@ -115,7 +135,6 @@ def login():
     data = request.json
     user = User.query.filter_by(username=data['username']).first()
     if user and check_password_hash(user.password, data['password']):
-        # REMEMBER=TRUE keeps the cookie persistent
         login_user(user, remember=True)
         return jsonify({'message': 'Logged in', 'username': user.username, 'id': user.id})
     return jsonify({'error': 'Invalid credentials'}), 401

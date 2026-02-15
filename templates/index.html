@@ -18,8 +18,22 @@
 </head>
 <body class="bg-light">
 
-<div class="container mt-5 mb-5">
-    <div id="auth-screen" class="screen active-screen">
+<div class="container mt-3 mb-5">
+
+    <div id="user-header" class="d-flex justify-content-between align-items-center mb-4 p-2 border-bottom bg-white rounded shadow-sm" style="display:none !important;">
+        <h4 class="m-0 text-primary">Elo League</h4>
+        <div class="d-flex align-items-center">
+            <span class="me-3">
+                <i class="bi bi-person-circle"></i>
+                <span id="header-username" class="fw-bold"></span>
+                <span id="header-admin-badge" class="badge bg-warning text-dark ms-1" style="display:none;">Admin</span>
+            </span>
+            <button class="btn btn-sm btn-outline-secondary me-2" onclick="showScreen('profile-screen')">Profile</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div id="auth-screen" class="screen active-screen mt-5">
         <div class="card p-4 mx-auto shadow-sm" style="max-width: 400px;">
             <h3 class="text-center">Elo League</h3>
             <div class="mb-3">
@@ -35,10 +49,7 @@
     </div>
 
     <div id="dashboard-screen" class="screen">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Your Groups</h2>
-            <button class="btn btn-outline-danger" onclick="logout()">Logout</button>
-        </div>
+        <h2 class="mb-4">Your Groups</h2>
 
         <div class="input-group mb-3">
             <input type="text" id="new-group-name" class="form-control" placeholder="New Group Name">
@@ -46,6 +57,22 @@
         </div>
 
         <div id="groups-list" class="list-group"></div>
+    </div>
+
+    <div id="profile-screen" class="screen">
+        <button class="btn btn-secondary mb-3" onclick="showScreen('dashboard-screen')">&larr; Back to Dashboard</button>
+        <div class="card p-4 mx-auto shadow-sm" style="max-width: 500px;">
+            <h3>Edit Profile</h3>
+            <p class="text-muted small">Changing your username will update it in all match history.</p>
+
+            <label class="form-label">New Username</label>
+            <input type="text" id="profile-username" class="form-control mb-3">
+
+            <label class="form-label">New Password (leave blank to keep current)</label>
+            <input type="password" id="profile-password" class="form-control mb-3">
+
+            <button class="btn btn-primary w-100" onclick="updateProfile()">Save Changes</button>
+        </div>
     </div>
 
     <div id="group-screen" class="screen">
@@ -122,6 +149,7 @@
 <script>
     let currentGroupId = null;
     let isAdmin = false;
+    let currentUser = ''; // Store globally to update UI
     let eloChartInstance = null;
     let allMembers = [];
     let fullGraphData = [];
@@ -129,7 +157,29 @@
     function showScreen(id) {
         document.querySelectorAll('.screen').forEach(el => el.classList.remove('active-screen'));
         document.getElementById(id).classList.add('active-screen');
+
+        // Header Logic
+        const header = document.getElementById('user-header');
+        if(id === 'auth-screen') {
+            header.style.setProperty('display', 'none', 'important');
+        } else {
+            header.style.setProperty('display', 'flex', 'important');
+            document.getElementById('header-username').innerText = currentUser;
+
+            // Show Admin badge ONLY in group screen if user is admin
+            const badge = document.getElementById('header-admin-badge');
+            if(id === 'group-screen' && isAdmin) {
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
         if(id === 'dashboard-screen') loadGroups();
+        if(id === 'profile-screen') {
+            document.getElementById('profile-username').value = currentUser;
+            document.getElementById('profile-password').value = '';
+        }
     }
 
     function switchTab(tabName) {
@@ -148,13 +198,18 @@
         return res;
     }
 
+    // --- AUTH & PROFILE ---
     async function login() {
         const u = document.getElementById('auth-username').value;
         const p = document.getElementById('auth-password').value;
         const res = await api('/login', 'POST', { username: u, password: p });
-        if (res.ok) showScreen('dashboard-screen');
-        else document.getElementById('auth-msg').innerText = "Invalid credentials";
+        if (res.ok) {
+            const data = await res.json();
+            currentUser = data.username;
+            showScreen('dashboard-screen');
+        } else document.getElementById('auth-msg').innerText = "Invalid credentials";
     }
+
     async function signup() {
         const u = document.getElementById('auth-username').value;
         const p = document.getElementById('auth-password').value;
@@ -162,10 +217,32 @@
         if (res.ok) alert("Signed up! Please login.");
         else alert("Username likely taken.");
     }
-    async function logout() { await api('/logout'); showScreen('auth-screen'); }
+
+    async function updateProfile() {
+        const newU = document.getElementById('profile-username').value;
+        const newP = document.getElementById('profile-password').value;
+
+        const res = await api('/profile', 'PUT', { username: newU, password: newP });
+        if(res.ok) {
+            const data = await res.json();
+            currentUser = data.username; // Update global var
+            document.getElementById('header-username').innerText = currentUser;
+            alert("Profile updated!");
+        } else {
+            alert("Error updating profile. Username might be taken.");
+        }
+    }
+
+    async function logout() {
+        await api('/logout');
+        isAdmin = false;
+        currentUser = '';
+        showScreen('auth-screen');
+    }
 
     // --- DASHBOARD ---
     async function loadGroups() {
+        isAdmin = false; // Reset admin state when going to dashboard
         const res = await api('/groups');
         const groups = await res.json();
         const list = document.getElementById('groups-list');
@@ -178,6 +255,7 @@
             list.appendChild(item);
         });
     }
+
     async function createGroup() {
         const name = document.getElementById('new-group-name').value;
         if(!name) return;
@@ -205,7 +283,7 @@
         updateChartRange('ALL');
         renderMembers(data.members);
 
-        showScreen('group-screen');
+        showScreen('group-screen'); // Triggers header update for Admin Badge
         switchTab('matches');
     }
 
@@ -248,22 +326,10 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
+                interaction: { mode: 'index', intersect: false },
                 scales: {
-                    x: {
-                        type: 'time',
-                        time: {
-                            unit: 'day',
-                            displayFormats: { day: 'MMM d' }
-                        },
-                        title: { display: true, text: 'Date' }
-                    },
-                    y: {
-                        title: { display: true, text: 'Elo Rating' }
-                    }
+                    x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'MMM d' } }, title: { display: true, text: 'Date' } },
+                    y: { title: { display: true, text: 'Elo Rating' } }
                 }
             }
         });
@@ -322,7 +388,6 @@
         const loserId = document.getElementById('match-loser').value;
         const score = document.getElementById('match-score').value;
         const date = document.getElementById('match-date').value;
-
         if(!winnerId || !loserId || winnerId === loserId) return alert("Invalid players");
         if(!score) return alert("Enter score");
 
@@ -405,15 +470,18 @@
         }
     }
 
-    // CHECK SESSION ON LOAD
+    // SESSION CHECK
     window.addEventListener('DOMContentLoaded', async () => {
         try {
             const res = await api('/session');
             if(res.ok) {
                 const data = await res.json();
-                if(data.auth) showScreen('dashboard-screen');
+                if(data.auth) {
+                    currentUser = data.username;
+                    showScreen('dashboard-screen');
+                }
             }
-        } catch(e) { console.error("Session check failed", e); }
+        } catch(e) { console.error(e); }
     });
 </script>
 </body>
