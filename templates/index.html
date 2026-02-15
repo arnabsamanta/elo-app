@@ -14,7 +14,7 @@
         .active-screen { display: block; }
         .nav-link { cursor: pointer; }
 
-        /* 4-COLUMN PAIRING STYLES */
+        /* 4-COLUMN PAIRING STYLES - BLUE / ORANGE THEME */
         .pair-col-header {
             font-size: 0.75rem;
             text-transform: uppercase;
@@ -35,8 +35,8 @@
         }
 
         .player-item {
-            padding: 6px 4px;
-            font-size: 0.8rem;
+            padding: 8px 4px;
+            font-size: 0.85rem;
             border-bottom: 1px solid #f0f0f0;
             cursor: pointer;
             white-space: nowrap;
@@ -46,27 +46,30 @@
             text-align: center;
         }
 
-        /* Col 1: Add to Team 1 (Left Pool) */
-        .item-pool-l { color: #198754; }
-        .item-pool-l:hover { background-color: #e8f5e9; font-weight: bold; }
+        /* Col 1: Add to Team 1 (Left Pool - Blue) */
+        .item-pool-l { color: #0d6efd; }
+        .item-pool-l:hover { background-color: #e7f1ff; font-weight: bold; }
         .item-pool-l::after { content: " >"; font-weight: bold; font-size: 0.7rem; opacity: 0.5; }
 
-        /* Col 4: Add to Team 2 (Right Pool) */
-        .item-pool-r { color: #dc3545; }
-        .item-pool-r:hover { background-color: #f8d7da; font-weight: bold; }
+        /* Col 4: Add to Team 2 (Right Pool - Orange) */
+        .item-pool-r { color: #fd7e14; }
+        .item-pool-r:hover { background-color: #fff3cd; font-weight: bold; }
         .item-pool-r::before { content: "< "; font-weight: bold; font-size: 0.7rem; opacity: 0.5; }
 
-        /* Col 2: Team 1 (Selected) */
-        .item-team1 { background-color: #d1e7dd; color: #0f5132; border-color: #badbcc; font-weight: 500; }
+        /* Col 2: Team 1 (Selected - Blue) */
+        .item-team1 { background-color: #cfe2ff; color: #084298; border-color: #b6d4fe; font-weight: 600; }
 
-        /* Col 3: Team 2 (Selected) */
-        .item-team2 { background-color: #f8d7da; color: #842029; border-color: #f5c2c7; font-weight: 500; }
+        /* Col 3: Team 2 (Selected - Orange) */
+        .item-team2 { background-color: #ffe5d0; color: #663300; border-color: #ffecb5; font-weight: 600; }
 
-        /* PROBABILITY BAR */
+        /* PROBABILITY BAR - BLUE / ORANGE */
         .prob-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: bold; font-size: 0.9rem; }
         .prob-progress { flex-grow: 1; height: 16px; background: #e9ecef; border-radius: 8px; overflow: hidden; margin: 0 8px; display: flex; }
-        .prob-fill-green { background-color: #198754; height: 100%; transition: width 0.3s; }
-        .prob-fill-red { background-color: #dc3545; height: 100%; transition: width 0.3s; }
+        .prob-fill-blue { background-color: #0d6efd; height: 100%; transition: width 0.3s; }
+        .prob-fill-orange { background-color: #fd7e14; height: 100%; transition: width 0.3s; }
+
+        /* Utility text colors for Orange since Bootstrap doesn't have text-orange by default */
+        .text-orange { color: #fd7e14 !important; }
     </style>
 </head>
 <body class="bg-light">
@@ -140,32 +143,32 @@
                 <div id="pairing-interface" style="display:none;">
 
                     <div class="prob-container" id="prob-container" style="display:none;">
-                        <span class="text-success" id="prob-text-t1">50%</span>
+                        <span class="text-primary" id="prob-text-t1">50%</span>
                         <div class="prob-progress">
-                            <div id="prob-fill-green" class="prob-fill-green" style="width: 50%"></div>
-                            <div id="prob-fill-red" class="prob-fill-red" style="width: 50%"></div>
+                            <div id="prob-fill-blue" class="prob-fill-blue" style="width: 50%"></div>
+                            <div id="prob-fill-orange" class="prob-fill-orange" style="width: 50%"></div>
                         </div>
-                        <span class="text-danger" id="prob-text-t2">50%</span>
+                        <span class="text-orange" id="prob-text-t2">50%</span>
                     </div>
 
                     <div class="row g-1 mb-3">
                         <div class="col-3">
-                            <div class="pair-col-header text-success"><i class="bi bi-plus-circle"></i> T1</div>
+                            <div class="pair-col-header text-primary"><i class="bi bi-plus-circle"></i> T1</div>
                             <div id="col-pool-l" class="pair-list-container"></div>
                         </div>
 
                         <div class="col-3">
-                            <div class="pair-col-header text-success" style="background:#e8f5e9;">TEAM 1</div>
-                            <div id="col-team1" class="pair-list-container" style="border-color:#198754;"></div>
+                            <div class="pair-col-header text-primary" style="background:#cfe2ff;">TEAM 1</div>
+                            <div id="col-team1" class="pair-list-container" style="border-color:#0d6efd;"></div>
                         </div>
 
                         <div class="col-3">
-                            <div class="pair-col-header text-danger" style="background:#f8d7da;">TEAM 2</div>
-                            <div id="col-team2" class="pair-list-container" style="border-color:#dc3545;"></div>
+                            <div class="pair-col-header text-orange" style="background:#ffe5d0;">TEAM 2</div>
+                            <div id="col-team2" class="pair-list-container" style="border-color:#fd7e14;"></div>
                         </div>
 
                         <div class="col-3">
-                            <div class="pair-col-header text-danger">T2 <i class="bi bi-plus-circle"></i></div>
+                            <div class="pair-col-header text-orange">T2 <i class="bi bi-plus-circle"></i></div>
                             <div id="col-pool-r" class="pair-list-container"></div>
                         </div>
                     </div>
@@ -175,8 +178,8 @@
                             <div class="col-6">
                                 <label class="small text-muted">Winner</label>
                                 <select id="match-outcome" class="form-select">
-                                    <option value="team1">Team 1 (Green)</option>
-                                    <option value="team2">Team 2 (Red)</option>
+                                    <option value="team1">Team 1 (Blue)</option>
+                                    <option value="team2">Team 2 (Orange)</option>
                                 </select>
                             </div>
                             <div class="col-6">
@@ -359,7 +362,7 @@
         switchMatchSubTab('pair');
     }
 
-    // --- 4-COLUMN PAIRING LOGIC ---
+    // --- 4-COLUMN PAIRING LOGIC (Blue/Orange) ---
     function setupMatchControls() {
         const interface = document.getElementById('pairing-interface');
         const warning = document.getElementById('admin-only-msg');
@@ -402,30 +405,28 @@
 
             if (state === 0) {
                 // In Pool: Show in Col 1 and Col 4
-                // Clone for Col 1
                 let itemL = div.cloneNode(true);
                 itemL.classList.add('item-pool-l');
                 itemL.onclick = () => updatePlayerState(m.id, 1); // Add to T1
                 col1.appendChild(itemL);
 
-                // Clone for Col 4
                 let itemR = div.cloneNode(true);
                 itemR.classList.add('item-pool-r');
                 itemR.onclick = () => updatePlayerState(m.id, 2); // Add to T2
                 col4.appendChild(itemR);
 
             } else if (state === 1) {
-                // In Team 1
+                // In Team 1 (Blue)
                 div.classList.add('item-team1');
                 div.innerHTML = `<i class="bi bi-x"></i> ${m.username}`;
-                div.onclick = () => updatePlayerState(m.id, 0); // Remove
+                div.onclick = () => updatePlayerState(m.id, 0);
                 col2.appendChild(div);
 
             } else if (state === 2) {
-                // In Team 2
+                // In Team 2 (Orange)
                 div.classList.add('item-team2');
                 div.innerHTML = `${m.username} <i class="bi bi-x"></i>`;
-                div.onclick = () => updatePlayerState(m.id, 0); // Remove
+                div.onclick = () => updatePlayerState(m.id, 0);
                 col3.appendChild(div);
             }
         });
@@ -467,8 +468,8 @@
         document.getElementById('prob-text-t1').innerText = t1Win + '%';
         document.getElementById('prob-text-t2').innerText = t2Win + '%';
 
-        document.getElementById('prob-fill-green').style.width = t1Win + '%';
-        document.getElementById('prob-fill-red').style.width = t2Win + '%';
+        document.getElementById('prob-fill-blue').style.width = t1Win + '%';
+        document.getElementById('prob-fill-orange').style.width = t2Win + '%';
     }
 
     async function saveMatch() {
