@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Elo League App</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         .screen { display: none; }
@@ -86,7 +87,7 @@
 
         <div id="tab-leaderboard" class="tab-content" style="display:none;">
             <div class="card p-3 mb-4 shadow-sm">
-                <h5>Elo History</h5>
+                <h5>Elo History (Closing per Day)</h5>
                 <canvas id="eloChart" height="100"></canvas>
             </div>
             <table class="table table-striped bg-white shadow-sm">
@@ -109,7 +110,7 @@
     let currentGroupId = null;
     let isAdmin = false;
     let eloChartInstance = null;
-    let allMembers = []; // Store members for dropdown population
+    let allMembers = [];
 
     // --- NAVIGATION ---
     function showScreen(id) {
@@ -132,7 +133,7 @@
         const res = await fetch('/api' + url, opts);
         return res;
     }
-    // (Login/Signup/Logout same as before)
+
     async function login() {
         const u = document.getElementById('auth-username').value;
         const p = document.getElementById('auth-password').value;
@@ -183,15 +184,10 @@
 
         document.getElementById('group-title').innerText = data.group_name;
 
-        // 1. Matches & Controls
         renderMatches(data.matches);
         setupMatchControls();
-
-        // 2. Leaderboard & Graph
         renderLeaderboard(data.leaderboard);
         renderGraph(data.graph_data);
-
-        // 3. Members
         renderMembers(data.members);
 
         showScreen('group-screen');
@@ -205,19 +201,23 @@
         matches.forEach(m => {
             let controls = '';
             if (isAdmin) {
-                // Pass match data to edit function
                 const matchJson = JSON.stringify(m).replace(/"/g, '&quot;');
+                // Using Bootstrap Icons (bi-pencil-square and bi-trash) inline
                 controls = `
-                    <div class="mt-2">
-                        <button class="btn btn-sm btn-outline-secondary me-2" onclick="editMatchSetup(${matchJson})">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteMatch(${m.id})">Delete</button>
+                    <div class="d-flex align-items-center">
+                        <button class="btn btn-sm btn-link text-secondary p-0 me-3" onclick="editMatchSetup(${matchJson})" title="Edit">
+                            <i class="bi bi-pencil-square" style="font-size: 1.2rem;"></i>
+                        </button>
+                        <button class="btn btn-sm btn-link text-danger p-0" onclick="deleteMatch(${m.id})" title="Delete">
+                            <i class="bi bi-trash" style="font-size: 1.2rem;"></i>
+                        </button>
                     </div>`;
             }
             list.innerHTML += `
-                <div class="list-group-item">
-                    <div class="d-flex justify-content-between">
-                        <span><strong>${m.winner}</strong> def. ${m.loser} (${m.score})</span>
-                        <span class="text-muted small">${m.date}</span>
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${m.winner}</strong> def. ${m.loser} <span class="badge bg-light text-dark border ms-1 me-1">${m.score}</span>
+                        <div class="text-muted small">${m.date}</div>
                     </div>
                     ${controls}
                 </div>`;
@@ -242,7 +242,6 @@
         });
     }
 
-    // Add or Edit Match
     async function saveMatch() {
         const id = document.getElementById('edit-match-id').value;
         const winnerId = document.getElementById('match-winner').value;
@@ -257,10 +256,8 @@
 
         let res;
         if (id) {
-            // Edit mode
             res = await api(`/matches/${id}`, 'PUT', payload);
         } else {
-            // Add mode
             res = await api(`/groups/${currentGroupId}/add_match`, 'POST', payload);
         }
 
@@ -279,9 +276,6 @@
         document.getElementById('match-winner').value = match.winner_id;
         document.getElementById('match-loser').value = match.loser_id;
         document.getElementById('match-score').value = match.score;
-
-        // Format date for datetime-local input (YYYY-MM-DDTHH:MM)
-        // match.date is "YYYY-MM-DD HH:MM", we replace space with T
         document.getElementById('match-date').value = match.date.replace(' ', 'T');
 
         window.scrollTo(0,0);
@@ -295,15 +289,13 @@
         document.getElementById('match-winner').value = '';
         document.getElementById('match-loser').value = '';
         document.getElementById('match-score').value = '';
-
-        // Set default date to now
         const now = new Date();
         now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
         document.getElementById('match-date').value = now.toISOString().slice(0,16);
     }
 
     async function deleteMatch(id) {
-        if(confirm("Are you sure? This will recalculate all Elo ratings.")) {
+        if(confirm("Are you sure? This will recalculate ratings.")) {
             await api(`/matches/${id}`, 'DELETE');
             loadGroupDetails(currentGroupId);
         }
@@ -320,18 +312,20 @@
 
     function renderGraph(datasets) {
         const ctx = document.getElementById('eloChart').getContext('2d');
-        if (eloChartInstance) eloChartInstance.destroy(); // Destroy old chart to prevent overlay
+        if (eloChartInstance) eloChartInstance.destroy();
 
         eloChartInstance = new Chart(ctx, {
             type: 'line',
-            data: {
-                datasets: datasets
-            },
+            data: { datasets: datasets },
             options: {
                 responsive: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
                 scales: {
                     x: {
-                        type: 'category', // Using simple categories (dates) as labels
+                        type: 'category',
                         title: { display: true, text: 'Date' }
                     },
                     y: {

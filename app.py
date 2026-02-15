@@ -66,10 +66,6 @@ def calculate_elo_change(winner_elo, loser_elo):
     return round(new_winner), round(new_loser)
 
 def recalculate_group_elos(group_id):
-    """
-    Resets everyone in the group to 1200 and replays all matches in order.
-    Essential when dates are changed or matches are edited/deleted.
-    """
     # 1. Reset all members to 1200
     members = GroupMember.query.filter_by(group_id=group_id).all()
     elo_map = {m.user_id: 1200 for m in members}
@@ -159,22 +155,20 @@ def group_details(group_id):
         'date': m.timestamp.strftime('%Y-%m-%d %H:%M')
     } for m in matches]
 
-    # 2. Leaderboard (Current State)
+    # 2. Leaderboard
     members = GroupMember.query.filter_by(group_id=group_id).order_by(GroupMember.elo_rating.desc()).all()
     leaderboard_data = [{
         'username': m.user.username, 'elo': m.elo_rating, 'is_admin': m.is_admin, 'id': m.user_id
     } for m in members]
 
-    # 3. Graph History Calculation
-    # We replay history locally to generate time-series data
+    # 3. Graph History (Closing Elo per Day)
     history_matches = Match.query.filter_by(group_id=group_id).order_by(Match.timestamp.asc()).all()
 
-    # Initialize elo map
     elo_map = {m.user_id: 1200 for m in members}
     user_names = {m.user_id: m.user.username for m in members}
 
-    # Data structure: { user_id: [ {x: date, y: elo}, ... ] }
-    graph_series = {uid: [{'x': 'Start', 'y': 1200}] for uid in elo_map}
+    # Dictionary to store closing elo: { user_id: { 'YYYY-MM-DD': elo } }
+    daily_closing_elos = {uid: {} for uid in elo_map}
 
     for m in history_matches:
         if m.winner_id in elo_map and m.loser_id in elo_map:
@@ -185,21 +179,31 @@ def group_details(group_id):
             elo_map[m.winner_id] = nw
             elo_map[m.loser_id] = nl
 
-            date_str = m.timestamp.strftime('%Y-%m-%d %H:%M')
-            graph_series[m.winner_id].append({'x': date_str, 'y': nw})
-            graph_series[m.loser_id].append({'x': date_str, 'y': nl})
+            # Use date string as key. Overwriting ensures we keep the last (closing) elo of the day.
+            day_key = m.timestamp.strftime('%Y-%m-%d')
+            daily_closing_elos[m.winner_id][day_key] = nw
+            daily_closing_elos[m.loser_id][day_key] = nl
 
-    # Format graph data for Chart.js
+    # Format for Chart.js
     chart_datasets = []
     colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
-    for idx, (uid, points) in enumerate(graph_series.items()):
-        chart_datasets.append({
-            'label': user_names.get(uid, 'Unknown'),
-            'data': points,
-            'borderColor': colors[idx % len(colors)],
-            'fill': False,
-            'tension': 0.1
-        })
+
+    for idx, (uid, date_map) in enumerate(daily_closing_elos.items()):
+        # Convert dict to list of {x, y} sorted by date
+        data_points = []
+        sorted_dates = sorted(date_map.keys())
+
+        for d in sorted_dates:
+            data_points.append({'x': d, 'y': date_map[d]})
+
+        if data_points: # Only add players who have played
+            chart_datasets.append({
+                'label': user_names.get(uid, 'Unknown'),
+                'data': data_points,
+                'borderColor': colors[idx % len(colors)],
+                'fill': False,
+                'tension': 0.1
+            })
 
     return jsonify({
         'matches': matches_data,
@@ -240,7 +244,6 @@ def add_match(group_id):
 @login_required
 def manage_match(match_id):
     match = Match.query.get_or_404(match_id)
-    # Check Admin
     membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=match.group_id).first()
     if not membership or not membership.is_admin:
         return jsonify({'error': 'Admin only'}), 403
@@ -259,7 +262,7 @@ def manage_match(match_id):
         try:
             match.timestamp = datetime.strptime(data['date'], '%Y-%m-%dT%H:%M')
         except:
-            pass # Keep old date if parse fails
+            pass
 
         db.session.commit()
         recalculate_group_elos(match.group_id)
@@ -280,9 +283,6 @@ def add_member(group_id):
     new_mem = GroupMember(user_id=user_to_add.id, group_id=group_id)
     db.session.add(new_mem)
     db.session.commit()
-
-    # New member starts at 1200, no need to recalculate history immediately
-    # unless we want to ensure consistency if they had old matches (unlikely)
     return jsonify({'message': 'Member added'})
 
 @app.route('/api/groups/<int:group_id>/make_admin', methods=['POST'])
