@@ -53,9 +53,9 @@
         <h2 id="group-title">Group Name</h2>
 
         <ul class="nav nav-tabs mb-3" id="groupTabs">
-            <li class="nav-item"><a class="nav-link active" onclick="switchTab('matches')">Matches</a></li>
-            <li class="nav-item"><a class="nav-link" onclick="switchTab('leaderboard')">Leaderboard & Graph</a></li>
-            <li class="nav-item"><a class="nav-link" onclick="switchTab('members')">Members</a></li>
+            <li class="nav-item"><a id="nav-link-matches" class="nav-link active" onclick="switchTab('matches')">Matches</a></li>
+            <li class="nav-item"><a id="nav-link-leaderboard" class="nav-link" onclick="switchTab('leaderboard')">Leaderboard & Graph</a></li>
+            <li class="nav-item"><a id="nav-link-members" class="nav-link" onclick="switchTab('members')">Members</a></li>
         </ul>
 
         <div id="tab-matches" class="tab-content active-tab">
@@ -99,7 +99,9 @@
                         <button type="button" class="btn btn-sm btn-outline-secondary active" onclick="updateChartRange('ALL')">All</button>
                     </div>
                 </div>
-                <canvas id="eloChart" height="100"></canvas>
+                <div style="position: relative; height: 300px; width: 100%;">
+                    <canvas id="eloChart"></canvas>
+                </div>
             </div>
             <table class="table table-striped bg-white shadow-sm">
                 <thead><tr><th>Rank</th><th>Player</th><th>Elo</th></tr></thead>
@@ -124,18 +126,26 @@
     let allMembers = [];
     let fullGraphData = [];
 
-    // --- NAVIGATION ---
+    // --- NAVIGATION FIXED ---
     function showScreen(id) {
         document.querySelectorAll('.screen').forEach(el => el.classList.remove('active-screen'));
         document.getElementById(id).classList.add('active-screen');
         if(id === 'dashboard-screen') loadGroups();
     }
 
+    // Fixed Switch Tab: No longer relies on event.target
     function switchTab(tabName) {
+        // Hide all contents
         document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+        // Deactivate all nav links
         document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+
+        // Show specific content
         document.getElementById('tab-' + tabName).style.display = 'block';
-        event.target.classList.add('active');
+
+        // Activate specific nav link by ID
+        const linkObj = document.getElementById('nav-link-' + tabName);
+        if(linkObj) linkObj.classList.add('active');
     }
 
     // --- AUTH & API ---
@@ -206,12 +216,13 @@
 
         renderMembers(data.members);
         showScreen('group-screen');
+
+        // This programmatic call is now safe
         switchTab('matches');
     }
 
     // --- GRAPH LOGIC ---
     function updateChartRange(range) {
-        // Update button styles
         document.querySelectorAll('.btn-group .btn').forEach(btn => {
             btn.classList.remove('active');
             if(btn.innerText.toUpperCase() === range || (range === 'ALL' && btn.innerText === 'All')) {
@@ -248,7 +259,7 @@
             data: { datasets: datasets },
             options: {
                 responsive: true,
-                maintainAspectRatio: false, // Helps with resizing
+                maintainAspectRatio: false, // Important: allows canvas to fit the fixed height div
                 interaction: {
                     mode: 'index',
                     intersect: false,
