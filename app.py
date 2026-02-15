@@ -1,4 +1,6 @@
 import os
+import math
+import trueskill
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
@@ -7,7 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 
-# Config
+# --- CONFIG ---
 app.config['SECRET_KEY'] = 'mysecretkey123'
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///local_db.sqlite')
 if app.config['SQLALCHEMY_DATABASE_URI'] and app.config['SQLALCHEMY_DATABASE_URI'].startswith("postgres://"):
@@ -16,6 +18,9 @@ if app.config['SQLALCHEMY_DATABASE_URI'] and app.config['SQLALCHEMY_DATABASE_URI
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
+
+# TrueSkill Global Env
+ts_env = trueskill.TrueSkill(draw_probability=0) # Assuming no draws for now, or low chance
 
 # --- MODELS ---
 
@@ -33,7 +38,13 @@ class GroupMember(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
-    elo_rating = db.Column(db.Integer, default=1200)
+
+    # TrueSkill Data
+    mu = db.Column(db.Float, default=25.0)
+    sigma = db.Column(db.Float, default=8.333)
+
+    # Display Rating (mu - 3*sigma)
+    rating = db.Column(db.Float, default=0.0)
 
     user = db.relationship('User', backref='memberships')
     group = db.relationship('Group', backref='members')
@@ -41,54 +52,89 @@ class GroupMember(db.Model):
 class Match(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=False)
-    winner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    loser_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     score = db.Column(db.String(50))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
-    winner = db.relationship('User', foreign_keys=[winner_id])
-    loser = db.relationship('User', foreign_keys=[loser_id])
+    participants = db.relationship('MatchParticipant', backref='match', cascade="all, delete-orphan")
+
+class MatchParticipant(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    match_id = db.Column(db.Integer, db.ForeignKey('match.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    is_winner = db.Column(db.Boolean, nullable=False) # True = Winner Team, False = Loser Team
+
+    user = db.relationship('User')
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- ELO LOGIC ---
+# --- TRUESKILL LOGIC ---
 
-def calculate_elo_change(winner_elo, loser_elo):
-    K = 32
-    expected_winner = 1 / (1 + 10 ** ((loser_elo - winner_elo) / 400))
-    expected_loser = 1 / (1 + 10 ** ((winner_elo - loser_elo) / 400))
+def get_win_probability(team1, team2):
+    """
+    Calculates probability of Team 1 beating Team 2.
+    team1/team2 are lists of GroupMember objects (or dicts with mu/sigma).
+    """
+    delta_mu = sum(p.mu for p in team1) - sum(p.mu for p in team2)
+    sum_sigma = sum(p.sigma ** 2 for p in team1) + sum(p.sigma ** 2 for p in team2)
+    player_count = len(team1) + len(team2)
+    denominator = math.sqrt(player_count * (ts_env.beta ** 2) + sum_sigma)
+    return ts_env.cdf(delta_mu / denominator)
 
-    new_winner = winner_elo + K * (1 - expected_winner)
-    new_loser = loser_elo + K * (0 - expected_loser)
-
-    return round(new_winner), round(new_loser)
-
-def recalculate_group_elos(group_id):
+def recalculate_group_ratings(group_id):
+    # 1. Reset all members
     members = GroupMember.query.filter_by(group_id=group_id).all()
-    elo_map = {m.user_id: 1200 for m in members}
+    # Map user_id to a Rating Object
+    rating_map = {m.user_id: ts_env.create_rating() for m in members}
 
+    # 2. Get matches sorted by time
     matches = Match.query.filter_by(group_id=group_id).all()
     matches.sort(key=lambda x: x.timestamp if x.timestamp else datetime.min)
 
+    # 3. Replay History
     for m in matches:
-        if m.winner_id in elo_map and m.loser_id in elo_map:
-            w_elo = elo_map[m.winner_id]
-            l_elo = elo_map[m.loser_id]
-            nw, nl = calculate_elo_change(w_elo, l_elo)
-            elo_map[m.winner_id] = nw
-            elo_map[m.loser_id] = nl
+        winners = [p.user_id for p in m.participants if p.is_winner]
+        losers = [p.user_id for p in m.participants if not p.is_winner]
 
+        if not winners or not losers: continue # Skip broken data
+
+        # Construct Team Rating Lists
+        winner_ratings = [rating_map[uid] for uid in winners if uid in rating_map]
+        loser_ratings = [rating_map[uid] for uid in losers if uid in rating_map]
+
+        if not winner_ratings or not loser_ratings: continue
+
+        # Calculate new ratings
+        # rate method expects list of teams: [team1_ratings, team2_ratings]
+        # ranks=[0, 1] means team1 (index 0) beat team2 (index 1)
+        new_ratings_list = ts_env.rate([winner_ratings, loser_ratings], ranks=[0, 1])
+
+        # Update map
+        new_winners = new_ratings_list[0]
+        new_losers = new_ratings_list[1]
+
+        for idx, uid in enumerate([uid for uid in winners if uid in rating_map]):
+            rating_map[uid] = new_winners[idx]
+
+        for idx, uid in enumerate([uid for uid in losers if uid in rating_map]):
+            rating_map[uid] = new_losers[idx]
+
+    # 4. Save to DB
     for m in members:
-        m.elo_rating = elo_map.get(m.user_id, 1200)
+        r = rating_map.get(m.user_id)
+        if r:
+            m.mu = r.mu
+            m.sigma = r.sigma
+            # Conservative Rating: mu - 3*sigma
+            m.rating = r.mu - 3 * r.sigma
+
     db.session.commit()
 
 # --- ROUTES ---
 
 @app.route('/')
-def home():
-    return render_template('index.html')
+def home(): return render_template('index.html')
 
 @app.route('/api/session')
 def check_session():
@@ -102,17 +148,12 @@ def update_profile():
     data = request.json
     new_username = data.get('username')
     new_password = data.get('password')
-
-    # Update Username
     if new_username and new_username != current_user.username:
         if User.query.filter_by(username=new_username).first():
             return jsonify({'error': 'Username taken'}), 400
         current_user.username = new_username
-
-    # Update Password
     if new_password:
         current_user.password = generate_password_hash(new_password, method='pbkdf2:sha256')
-
     db.session.commit()
     return jsonify({'message': 'Profile updated', 'username': current_user.username})
 
@@ -127,8 +168,7 @@ def signup():
         db.session.add(new_user)
         db.session.commit()
         return jsonify({'message': 'Created'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -141,9 +181,7 @@ def login():
 
 @app.route('/api/logout')
 @login_required
-def logout():
-    logout_user()
-    return jsonify({'message': 'Logged out'})
+def logout(): logout_user(); return jsonify({'message': 'Logged out'})
 
 @app.route('/api/groups', methods=['GET', 'POST'])
 @login_required
@@ -157,7 +195,6 @@ def groups():
         db.session.add(member)
         db.session.commit()
         return jsonify({'message': 'Group created'})
-
     memberships = GroupMember.query.filter_by(user_id=current_user.id).all()
     group_list = [{'id': m.group.id, 'name': m.group.name, 'is_admin': m.is_admin} for m in memberships]
     return jsonify(group_list)
@@ -166,58 +203,78 @@ def groups():
 @login_required
 def group_details(group_id):
     membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=group_id).first()
-    if not membership:
-        return jsonify({'error': 'Unauthorized'}), 403
+    if not membership: return jsonify({'error': 'Unauthorized'}), 403
 
-    # Matches
+    # 1. Matches (N vs N)
     matches = Match.query.filter_by(group_id=group_id).all()
     matches.sort(key=lambda x: x.timestamp if x.timestamp else datetime.min, reverse=True)
 
     matches_data = []
     for m in matches:
+        winners = [p.user.username for p in m.participants if p.is_winner]
+        losers = [p.user.username for p in m.participants if not p.is_winner]
         date_display = m.timestamp.strftime('%Y-%m-%d %H:%M') if m.timestamp else "No Date"
+
         matches_data.append({
             'id': m.id,
-            'winner': m.winner.username,
-            'winner_id': m.winner_id,
-            'loser': m.loser.username,
-            'loser_id': m.loser_id,
+            'winners': ", ".join(winners),
+            'losers': ", ".join(losers),
             'score': m.score,
             'date': date_display
         })
 
-    # Leaderboard
-    members = GroupMember.query.filter_by(group_id=group_id).order_by(GroupMember.elo_rating.desc()).all()
-    leaderboard_data = [{
-        'username': m.user.username, 'elo': m.elo_rating, 'is_admin': m.is_admin, 'id': m.user_id
-    } for m in members]
+    # 2. Leaderboard
+    members = GroupMember.query.filter_by(group_id=group_id).order_by(GroupMember.rating.desc()).all()
+    leaderboard_data = []
+    for m in members:
+        leaderboard_data.append({
+            'username': m.user.username,
+            'rating': round(m.rating, 2), # Display conservative rating
+            'is_admin': m.is_admin,
+            'id': m.user_id,
+            'mu': m.mu, # Need these for probability calc
+            'sigma': m.sigma
+        })
 
-    # Graph
+    # 3. Graph (Rating over time)
+    # Replay history to get points
     matches.sort(key=lambda x: x.timestamp if x.timestamp else datetime.min)
-    elo_map = {m.user_id: 1200 for m in members}
+    rating_map = {m.user_id: ts_env.create_rating() for m in members}
+    daily_closing_ratings = {uid: {} for uid in rating_map}
     user_names = {m.user_id: m.user.username for m in members}
-    daily_closing_elos = {uid: {} for uid in elo_map}
 
     for m in matches:
-        if m.winner_id in elo_map and m.loser_id in elo_map:
-            w_elo = elo_map[m.winner_id]
-            l_elo = elo_map[m.loser_id]
-            nw, nl = calculate_elo_change(w_elo, l_elo)
-            elo_map[m.winner_id] = nw
-            elo_map[m.loser_id] = nl
+        w_ids = [p.user_id for p in m.participants if p.is_winner]
+        l_ids = [p.user_id for p in m.participants if not p.is_winner]
+        if not w_ids or not l_ids: continue
 
+        w_team = [rating_map[uid] for uid in w_ids if uid in rating_map]
+        l_team = [rating_map[uid] for uid in l_ids if uid in rating_map]
+
+        if w_team and l_team:
+            new_ratings = ts_env.rate([w_team, l_team], ranks=[0, 1])
+
+            # Update Map & Record Data Point
             ts = m.timestamp if m.timestamp else datetime.utcnow()
             day_key = ts.strftime('%Y-%m-%d')
-            daily_closing_elos[m.winner_id][day_key] = nw
-            daily_closing_elos[m.loser_id][day_key] = nl
+
+            # Update Winners
+            for idx, uid in enumerate([uid for uid in w_ids if uid in rating_map]):
+                rating_map[uid] = new_ratings[0][idx]
+                r = rating_map[uid]
+                daily_closing_ratings[uid][day_key] = r.mu - 3*r.sigma
+
+            # Update Losers
+            for idx, uid in enumerate([uid for uid in l_ids if uid in rating_map]):
+                rating_map[uid] = new_ratings[1][idx]
+                r = rating_map[uid]
+                daily_closing_ratings[uid][day_key] = r.mu - 3*r.sigma
 
     chart_datasets = []
     colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
-
-    for idx, (uid, date_map) in enumerate(daily_closing_elos.items()):
+    for idx, (uid, date_map) in enumerate(daily_closing_ratings.items()):
         data_points = []
-        sorted_dates = sorted(date_map.keys())
-        for d in sorted_dates:
+        for d in sorted(date_map.keys()):
             data_points.append({'x': d, 'y': date_map[d]})
         if data_points:
             chart_datasets.append({
@@ -232,69 +289,80 @@ def group_details(group_id):
     return jsonify({
         'matches': matches_data,
         'leaderboard': leaderboard_data,
-        'members': leaderboard_data,
+        'members': leaderboard_data, # Use same list for member dropdowns
         'is_user_admin': membership.is_admin,
         'group_name': membership.group.name,
         'graph_data': chart_datasets
     })
 
+@app.route('/api/predict', methods=['POST'])
+@login_required
+def predict_match():
+    data = request.json
+    # Expect data = { 'team1_ids': [1, 2], 'team2_ids': [3, 4], 'group_id': 1 }
+    group_id = data.get('group_id')
+
+    # Fetch Members
+    t1_members = GroupMember.query.filter(GroupMember.group_id==group_id, GroupMember.user_id.in_(data['team1_ids'])).all()
+    t2_members = GroupMember.query.filter(GroupMember.group_id==group_id, GroupMember.user_id.in_(data['team2_ids'])).all()
+
+    if not t1_members or not t2_members:
+        return jsonify({'win_prob': 0.5}) # Default
+
+    prob = get_win_probability(t1_members, t2_members)
+    return jsonify({'win_prob': prob})
+
 @app.route('/api/groups/<int:group_id>/add_match', methods=['POST'])
 @login_required
 def add_match(group_id):
+    # Data: { winners: [id, id], losers: [id, id], score: "...", date: "..." }
     membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=group_id).first()
     if not membership or not membership.is_admin: return jsonify({'error': 'Admin only'}), 403
 
     data = request.json
-    try:
-        match_date = datetime.strptime(data['date'], '%Y-%m-%dT%H:%M')
-    except:
-        match_date = datetime.utcnow()
+    try: match_date = datetime.strptime(data['date'], '%Y-%m-%dT%H:%M')
+    except: match_date = datetime.utcnow()
 
-    match = Match(
-        group_id=group_id, winner_id=data['winner_id'], loser_id=data['loser_id'], score=data['score'], timestamp=match_date
-    )
+    # Create Match
+    match = Match(group_id=group_id, score=data['score'], timestamp=match_date)
     db.session.add(match)
+    db.session.flush() # Get ID
+
+    # Add Participants
+    for uid in data['winners']:
+        db.session.add(MatchParticipant(match_id=match.id, user_id=uid, is_winner=True))
+    for uid in data['losers']:
+        db.session.add(MatchParticipant(match_id=match.id, user_id=uid, is_winner=False))
+
     db.session.commit()
-    recalculate_group_elos(group_id)
+    recalculate_group_ratings(group_id)
     return jsonify({'message': 'Match added'})
 
-@app.route('/api/matches/<int:match_id>', methods=['PUT', 'DELETE'])
+@app.route('/api/matches/<int:match_id>', methods=['DELETE'])
 @login_required
-def manage_match(match_id):
+def delete_match(match_id):
     match = Match.query.get_or_404(match_id)
     membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=match.group_id).first()
     if not membership or not membership.is_admin: return jsonify({'error': 'Admin only'}), 403
 
-    if request.method == 'DELETE':
-        db.session.delete(match)
-        db.session.commit()
-        recalculate_group_elos(match.group_id)
-        return jsonify({'message': 'Deleted'})
+    db.session.delete(match)
+    db.session.commit()
+    recalculate_group_ratings(match.group_id)
+    return jsonify({'message': 'Deleted'})
 
-    if request.method == 'PUT':
-        data = request.json
-        match.winner_id = data['winner_id']
-        match.loser_id = data['loser_id']
-        match.score = data['score']
-        try: match.timestamp = datetime.strptime(data['date'], '%Y-%m-%dT%H:%M')
-        except: pass
-        db.session.commit()
-        recalculate_group_elos(match.group_id)
-        return jsonify({'message': 'Updated'})
+# Edit is complex for N vs N, keeping it simple for now (Delete & Re-add is safer)
 
 @app.route('/api/groups/<int:group_id>/add_member', methods=['POST'])
 @login_required
 def add_member(group_id):
     membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=group_id).first()
     if not membership or not membership.is_admin: return jsonify({'error': 'Admin only'}), 403
-
     user_to_add = User.query.filter_by(username=request.json['username']).first()
     if not user_to_add: return jsonify({'error': 'User not found'}), 404
     if GroupMember.query.filter_by(user_id=user_to_add.id, group_id=group_id).first():
         return jsonify({'error': 'Already in group'}), 400
-
-    new_mem = GroupMember(user_id=user_to_add.id, group_id=group_id)
-    db.session.add(new_mem)
+    # New members get default TrueSkill
+    db.session.add(GroupMember(user_id=user_to_add.id, group_id=group_id))
     db.session.commit()
     return jsonify({'message': 'Member added'})
 
