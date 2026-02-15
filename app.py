@@ -10,7 +10,7 @@ app = Flask(__name__)
 # Config
 app.config['SECRET_KEY'] = 'mysecretkey123'
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///local_db.sqlite')
-if app.config['SQLALCHEMY_DATABASE_URI'].startswith("postgres://"):
+if app.config['SQLALCHEMY_DATABASE_URI'] and app.config['SQLALCHEMY_DATABASE_URI'].startswith("postgres://"):
     app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace("postgres://", "postgresql://", 1)
 
 db = SQLAlchemy(app)
@@ -66,14 +66,13 @@ def calculate_elo_change(winner_elo, loser_elo):
     return round(new_winner), round(new_loser)
 
 def recalculate_group_elos(group_id):
-    # 1. Reset all members to 1200
     members = GroupMember.query.filter_by(group_id=group_id).all()
     elo_map = {m.user_id: 1200 for m in members}
 
-    # 2. Get all matches sorted by time
-    matches = Match.query.filter_by(group_id=group_id).order_by(Match.timestamp.asc()).all()
+    matches = Match.query.filter_by(group_id=group_id).all()
+    # Sort safely (handle None)
+    matches.sort(key=lambda x: x.timestamp if x.timestamp else datetime.min)
 
-    # 3. Replay history
     for m in matches:
         if m.winner_id in elo_map and m.loser_id in elo_map:
             w_elo = elo_map[m.winner_id]
@@ -82,7 +81,6 @@ def recalculate_group_elos(group_id):
             elo_map[m.winner_id] = nw
             elo_map[m.loser_id] = nl
 
-    # 4. Save to DB
     for m in members:
         m.elo_rating = elo_map.get(m.user_id, 1200)
     db.session.commit()
@@ -96,13 +94,16 @@ def home():
 @app.route('/api/signup', methods=['POST'])
 def signup():
     data = request.json
-    if User.query.filter_by(username=data['username']).first():
-        return jsonify({'error': 'Username taken'}), 400
-    hashed_pw = generate_password_hash(data['password'], method='pbkdf2:sha256')
-    new_user = User(username=data['username'], password=hashed_pw)
-    db.session.add(new_user)
-    db.session.commit()
-    return jsonify({'message': 'Created'})
+    try:
+        if User.query.filter_by(username=data['username']).first():
+            return jsonify({'error': 'Username taken'}), 400
+        hashed_pw = generate_password_hash(data['password'], method='pbkdf2:sha256')
+        new_user = User(username=data['username'], password=hashed_pw)
+        db.session.add(new_user)
+        db.session.commit()
+        return jsonify({'message': 'Created'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -144,16 +145,21 @@ def group_details(group_id):
         return jsonify({'error': 'Unauthorized'}), 403
 
     # 1. Matches List
-    matches = Match.query.filter_by(group_id=group_id).order_by(Match.timestamp.desc()).all()
-    matches_data = [{
-        'id': m.id,
-        'winner': m.winner.username,
-        'winner_id': m.winner_id,
-        'loser': m.loser.username,
-        'loser_id': m.loser_id,
-        'score': m.score,
-        'date': m.timestamp.strftime('%Y-%m-%d %H:%M')
-    } for m in matches]
+    matches = Match.query.filter_by(group_id=group_id).all()
+    matches.sort(key=lambda x: x.timestamp if x.timestamp else datetime.min, reverse=True)
+
+    matches_data = []
+    for m in matches:
+        date_display = m.timestamp.strftime('%Y-%m-%d %H:%M') if m.timestamp else "No Date"
+        matches_data.append({
+            'id': m.id,
+            'winner': m.winner.username,
+            'winner_id': m.winner_id,
+            'loser': m.loser.username,
+            'loser_id': m.loser_id,
+            'score': m.score,
+            'date': date_display
+        })
 
     # 2. Leaderboard
     members = GroupMember.query.filter_by(group_id=group_id).order_by(GroupMember.elo_rating.desc()).all()
@@ -161,16 +167,18 @@ def group_details(group_id):
         'username': m.user.username, 'elo': m.elo_rating, 'is_admin': m.is_admin, 'id': m.user_id
     } for m in members]
 
-    # 3. Graph History (Closing Elo per Day)
-    history_matches = Match.query.filter_by(group_id=group_id).order_by(Match.timestamp.asc()).all()
+    # 3. Graph History (Daily Closing Elo)
+    matches.sort(key=lambda x: x.timestamp if x.timestamp else datetime.min)
 
     elo_map = {m.user_id: 1200 for m in members}
     user_names = {m.user_id: m.user.username for m in members}
-
-    # Dictionary to store closing elo: { user_id: { 'YYYY-MM-DD': elo } }
     daily_closing_elos = {uid: {} for uid in elo_map}
 
-    for m in history_matches:
+    # Seed initial point
+    # We can seed "today" or "start of time" as 1200,
+    # but for cleaner graphs we just plot points where activity happens.
+
+    for m in matches:
         if m.winner_id in elo_map and m.loser_id in elo_map:
             w_elo = elo_map[m.winner_id]
             l_elo = elo_map[m.loser_id]
@@ -179,30 +187,29 @@ def group_details(group_id):
             elo_map[m.winner_id] = nw
             elo_map[m.loser_id] = nl
 
-            # Use date string as key. Overwriting ensures we keep the last (closing) elo of the day.
-            day_key = m.timestamp.strftime('%Y-%m-%d')
+            ts = m.timestamp if m.timestamp else datetime.utcnow()
+            day_key = ts.strftime('%Y-%m-%d')
+
             daily_closing_elos[m.winner_id][day_key] = nw
             daily_closing_elos[m.loser_id][day_key] = nl
 
-    # Format for Chart.js
     chart_datasets = []
     colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
 
     for idx, (uid, date_map) in enumerate(daily_closing_elos.items()):
-        # Convert dict to list of {x, y} sorted by date
         data_points = []
         sorted_dates = sorted(date_map.keys())
-
         for d in sorted_dates:
             data_points.append({'x': d, 'y': date_map[d]})
 
-        if data_points: # Only add players who have played
+        if data_points:
             chart_datasets.append({
                 'label': user_names.get(uid, 'Unknown'),
                 'data': data_points,
                 'borderColor': colors[idx % len(colors)],
                 'fill': False,
-                'tension': 0.1
+                'tension': 0.1,
+                'pointRadius': 3
             })
 
     return jsonify({
