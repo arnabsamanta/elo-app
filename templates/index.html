@@ -98,7 +98,7 @@
         <div class="d-flex align-items-center">
             <span class="me-3 clickable-profile" onclick="showScreen('profile-screen')" title="Edit Profile">
                 <i class="bi bi-person-circle me-1"></i>
-                <span id="header-username" class="d-none d-sm-inline fw-bold text-decoration-underline"></span>
+                <span id="header-username" class="fw-bold text-decoration-underline"></span>
             </span>
             <button class="btn btn-sm btn-outline-danger" onclick="logout()">Logout</button>
         </div>
@@ -232,7 +232,7 @@
                     <h5>Rating History</h5>
                     <div class="btn-group" role="group">
                         <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('1W')">1W</button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('1M')">1M</button>
+                        <button class="btn btn-sm btn-outline-secondary active" onclick="updateChartRange('1M')">1M</button>
                         <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('1Y')">1Y</button>
                         <button class="btn btn-sm btn-outline-secondary" onclick="updateChartRange('ALL')">All</button>
                     </div>
@@ -377,7 +377,10 @@
         renderMatches(data.matches);
         setupMatchControls();
         renderLeaderboard(data.leaderboard);
-        updateChartRange('ALL');
+
+        // FIXED: Set graph to 1M by default
+        updateChartRange('1M');
+
         renderMembers(data.members);
 
         showScreen('group-screen');
@@ -550,6 +553,13 @@
     }
 
     function updateChartRange(range) {
+        document.querySelectorAll('.btn-group .btn').forEach(btn => {
+            btn.classList.remove('active');
+            if(btn.innerText.toUpperCase() === range || (range === 'ALL' && btn.innerText === 'All')) {
+                btn.classList.add('active');
+            }
+        });
+
         const now = new Date();
         let startDate = null;
         if (range === '1W') startDate = new Date(now.setDate(now.getDate() - 7));
@@ -577,7 +587,7 @@
                 },
                 plugins: {
                     legend: {
-                        display: true, // Show Legend
+                        display: true,
                         position: 'bottom',
                         labels: { boxWidth: 12, usePointStyle: true }
                     }
